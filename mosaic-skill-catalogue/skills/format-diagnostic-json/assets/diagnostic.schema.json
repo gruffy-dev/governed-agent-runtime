@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mosaic.example/schemas/diagnostic.schema.json",
+  "title": "MOSAIC diagnostic result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject",
+    "time_window",
+    "status",
+    "observations",
+    "hypotheses",
+    "recommended_next_steps",
+    "limitations"
+  ],
+  "properties": {
+    "subject": {
+      "type": "string",
+      "minLength": 1
+    },
+    "time_window": {
+      "type": ["string", "null"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["healthy", "degraded", "failed", "indeterminate"]
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding", "source"],
+        "properties": {
+          "finding": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["explanation", "confidence", "support"],
+        "properties": {
+          "explanation": {"type": "string", "minLength": 1},
+          "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "support": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "recommended_next_steps": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "limitations": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

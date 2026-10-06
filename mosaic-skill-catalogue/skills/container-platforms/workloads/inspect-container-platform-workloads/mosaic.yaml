@@ -1,0 +1,20 @@
+schema_version: 1
+version: 1.3.2
+kind: procedural
+required_capability_names: []
+optional_capability_names:
+  - kubernetes.pods.running.count
+  - kubernetes.pods.status.read
+  - kubernetes.events.read
+  - kubernetes.pod.detail.read
+  - kubernetes.pod.logs.read
+  - kubernetes.deployments.status.read
+  - kubernetes.deployment.detail.read
+  - kubernetes.replicasets.status.read
+  - kubernetes.replicaset.detail.read
+  - kubernetes.statefulsets.status.read
+  - kubernetes.statefulset.detail.read
+  - kubernetes.daemonsets.status.read
+  - kubernetes.daemonset.detail.read
+  - kubernetes.jobs.status.read
+  - kubernetes.job.detail.read

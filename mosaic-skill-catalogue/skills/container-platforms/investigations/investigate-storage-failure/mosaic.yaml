@@ -1,0 +1,16 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names:
+  - kubernetes.persistentvolumeclaims.status.read
+  - kubernetes.events.read
+optional_capability_names:
+  - kubernetes.persistentvolumeclaim.detail.read
+  - kubernetes.persistentvolumes.status.read
+  - kubernetes.persistentvolume.detail.read
+  - kubernetes.storageclasses.read
+  - kubernetes.volumeattachments.status.read
+  - kubernetes.volumeattachment.detail.read
+  - kubernetes.pods.status.read
+  - kubernetes.pod.detail.read
+  - kubernetes.pod.logs.read

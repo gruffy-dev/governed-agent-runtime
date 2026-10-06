@@ -1,0 +1,6 @@
+schema_version: 1
+version: 1.0.0
+kind: output
+output_form_file: references/non-technical-summary-form.md
+required_capability_names: []
+optional_capability_names: []

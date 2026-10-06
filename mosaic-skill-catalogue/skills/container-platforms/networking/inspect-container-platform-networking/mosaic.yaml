@@ -1,0 +1,15 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names: []
+optional_capability_names:
+  - kubernetes.services.read
+  - kubernetes.service.detail.read
+  - kubernetes.endpoints.read
+  - kubernetes.endpoint.detail.read
+  - kubernetes.ingresses.status.read
+  - kubernetes.ingress.detail.read
+  - openshift.routes.status.read
+  - openshift.route.detail.read
+  - kubernetes.networkpolicies.read
+  - kubernetes.networkpolicy.detail.read

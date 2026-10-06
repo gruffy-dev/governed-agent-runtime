@@ -1,0 +1,8 @@
+schema_version: 1
+version: 1.1.0
+kind: procedural
+required_capability_names:
+  - mq.queue.status.read
+  - mq.queue.configuration.read
+optional_capability_names:
+  - mq.qmgr.status.read

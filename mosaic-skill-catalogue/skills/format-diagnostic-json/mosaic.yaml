@@ -1,0 +1,6 @@
+schema_version: 1
+version: 1.0.0
+kind: output
+output_schema_file: assets/diagnostic.schema.json
+required_capability_names: []
+optional_capability_names: []

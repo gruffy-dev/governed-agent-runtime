@@ -1,0 +1,68 @@
+flowchart LR
+    subgraph Consumers["Runtime Consumers"]
+        User["User / Client"]
+    end
+
+    subgraph Lifecycle["MOSAIC Registration and Lifecycle"]
+        SkillSource["Skill Marketplace<br/>(Git)"]
+        AdaRegistryAdapter["ADA Registry Adapter"]
+        CapabilityLifecycle["Capability Lifecycle<br/>(registration and validation)"]
+        SkillLifecycle["Skill Lifecycle<br/>(registration and validation)"]
+        CapabilityCatalogue["Versioned Capability Catalogue"]
+        SkillCatalogue["Versioned Skill Catalogue"]
+
+        AdaRegistryAdapter --> CapabilityLifecycle
+        CapabilityLifecycle --> CapabilityCatalogue
+        SkillSource --> SkillLifecycle
+        CapabilityCatalogue --> SkillLifecycle
+        SkillLifecycle --> SkillCatalogue
+    end
+
+    subgraph Provisioning["Deployment / Workspace Provisioning"]
+        RuntimeSnapshot["Versioned Validated Runtime Snapshot"]
+
+        CapabilityCatalogue --> RuntimeSnapshot
+        SkillCatalogue --> RuntimeSnapshot
+    end
+
+    subgraph Runtime["MOSAIC Agent GCP Runtime"]
+        InvocationService["ADA Invocation and Session Boundary"]
+        WorkspaceService["Workspace and Execution Profile Service"]
+        AgentRuntime["Agent Runtime"]
+        SkillLoader["Skill Discovery and Loader"]
+        CapabilityResolver["Capability Catalogue and Resolver"]
+        McpGateway["MCP Execution Gateway"]
+        LlmGateway["LLM Gateway Adapter"]
+
+        InvocationService --> WorkspaceService
+        WorkspaceService --> AgentRuntime
+        WorkspaceService -->|"activate capability version"| CapabilityResolver
+        WorkspaceService -->|"activate skill version"| SkillLoader
+        AgentRuntime -->|"load approved guidance"| SkillLoader
+        SkillLoader -->|"skill instructions"| AgentRuntime
+        AgentRuntime -->|"semantic capability request"| McpGateway
+        McpGateway -->|"local resolution and binding"| CapabilityResolver
+        CapabilityResolver -->|"prepared invocation"| McpGateway
+        AgentRuntime --> LlmGateway
+    end
+
+    RuntimeSnapshot -. "atomic hot reload outside request path" .-> WorkspaceService
+    User --> InvocationService
+
+    subgraph External["Preexisting Organisational Services"]
+        McpCatalogue["Authoritative MCP Catalogue<br/>(ADA contract TBC)"]
+        AiAccessLayer["AI Access Layer"]
+        ApprovedLlm["Vertex AI / Approved LLM"]
+        McpServers["Registered MCP Servers"]
+        EnterpriseSystems["Enterprise Systems"]
+        AdaNfr["ADA-managed Logging, Audit and Telemetry"]
+
+        McpCatalogue --> AdaRegistryAdapter
+        AiAccessLayer --> ApprovedLlm
+        McpServers --> EnterpriseSystems
+    end
+
+    LlmGateway --> AiAccessLayer
+    McpGateway -->|"provider invocation only"| McpServers
+
+    AgentRuntime -.-> AdaNfr

@@ -1,0 +1,14 @@
+schema_version: 1
+version: 1.1.0
+kind: procedural
+required_capability_names: []
+optional_capability_names:
+  - observability.http.responses.read
+  - observability.http.latency.read
+  - observability.http.connection.errors.read
+  - observability.http.sessions.read
+  - observability.compute.cpu.read
+  - observability.compute.memory.read
+  - observability.network.traffic.read
+  - observability.network.errors.read
+  - observability.workload.restarts.read

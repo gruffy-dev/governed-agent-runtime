@@ -1,0 +1,470 @@
+{
+  "schema_version": 3,
+  "snapshot_id": "mq-seed-example-v2",
+  "targets": [
+    {
+      "id": "mq/example",
+      "display_name": "Example MQ queue manager",
+      "aliases": [
+        "example-mq",
+        "example"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "provider_name": "mq-environment-mcp-example",
+      "provider_type": "mq-environment",
+      "transport": "streamable_http",
+      "header_strategy": "ada_request_context",
+      "base_url": "https://mq-mcp.example.com/mcp",
+      "allowed_tool_names": [
+        "dspmq"
+      ],
+      "routing": {
+        "mode": "target_independent"
+      }
+    },
+    {
+      "provider_name": "mq-mcp-example",
+      "provider_type": "mq",
+      "transport": "streamable_http",
+      "header_strategy": "ada_request_context",
+      "base_url": "https://mq-mcp.example.com/mcp",
+      "allowed_tool_names": [
+        "runmqsc"
+      ],
+      "routing": {
+        "mode": "shared_endpoint",
+        "target_argument_name": "qmgr_name",
+        "target_bindings": [
+          {
+            "target_id": "mq/example",
+            "argument_value": "EXAMPLE.QMGR"
+          }
+        ]
+      }
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "mq.environment.status.read",
+      "description": "List queue managers visible to the connected MQ administrative endpoint and report their returned running state.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq-environment",
+          "tool_name": "dspmq",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "queue_manager_environment_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.qmgr.status.read",
+      "description": "Read current operational status for the selected MQ queue manager.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "fixed",
+              "fixed_value": "DISPLAY QMSTATUS ALL",
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "queue_manager_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.qmgr.configuration.read",
+      "description": "Read a bounded set of operational configuration attributes for the selected MQ queue manager.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "fixed",
+              "fixed_value": "DISPLAY QMGR DEADQ COMMANDQ DEFXMITQ MAXHANDS MAXMSGL PLATFORM REPOS REPOSNL",
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "queue_manager_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.queue.status.read",
+      "description": "Read point-in-time depth, open-handle counts, recent activity, age, and uncommitted-message status for one exact MQ local queue.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "queue_name"
+              ],
+              "value_template": "DISPLAY QSTATUS({queue_name}) TYPE(QUEUE) CURDEPTH IPPROCS OPPROCS LGETDATE LGETTIME LPUTDATE LPUTTIME MSGAGE UNCOM",
+              "semantic_argument_patterns": {
+                "queue_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "queue_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.queue.configuration.read",
+      "description": "Read selected capacity, access, persistence, triggering, and usage configuration for one exact MQ local queue.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "queue_name"
+              ],
+              "value_template": "DISPLAY QLOCAL({queue_name}) DESCR GET PUT MAXDEPTH MAXMSGL USAGE DEFPSIST DEFSOPT BOQNAME BOTHRESH TRIGGER TRIGTYPE TRIGDEPTH PROCESS INITQ",
+              "semantic_argument_patterns": {
+                "queue_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "queue_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.channel.status.read",
+      "description": "Read current status for one exact MQ channel without starting, stopping, resetting, resolving, or pinging it.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "channel_name"
+              ],
+              "value_template": "DISPLAY CHSTATUS({channel_name}) CURRENT STATUS SUBSTATE CHLTYPE CONNAME RQMNAME XMITQ INDOUBT CURMSGS MSGS LSTMSGDA LSTMSGTI",
+              "semantic_argument_patterns": {
+                "channel_name": "[A-Z][A-Z0-9._]{0,19}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "channel_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.channel.configuration.read",
+      "description": "Read the definition of one exact MQ channel without changing or testing it.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "channel_name"
+              ],
+              "value_template": "DISPLAY CHANNEL({channel_name}) ALL",
+              "semantic_argument_patterns": {
+                "channel_name": "[A-Z][A-Z0-9._]{0,19}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "channel_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.listener.status.read",
+      "description": "Read current status for one exact MQ listener without starting or stopping it.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "listener_name"
+              ],
+              "value_template": "DISPLAY LSSTATUS({listener_name}) ALL",
+              "semantic_argument_patterns": {
+                "listener_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "listener_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.listener.configuration.read",
+      "description": "Read the definition of one exact MQ listener without changing it.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "listener_name"
+              ],
+              "value_template": "DISPLAY LISTENER({listener_name}) ALL",
+              "semantic_argument_patterns": {
+                "listener_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "listener_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.service.status.read",
+      "description": "Read current status for one exact MQ service on platforms that support MQ service objects.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "service_name"
+              ],
+              "value_template": "DISPLAY SVSTATUS({service_name}) STATUS PID SERVTYPE STARTDA STARTTI CONTROL",
+              "semantic_argument_patterns": {
+                "service_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "service_status",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.service.configuration.read",
+      "description": "Read selected operational configuration for one exact MQ service on supported platforms.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "service_name"
+              ],
+              "value_template": "DISPLAY SERVICE({service_name}) DESCR CONTROL SERVTYPE STARTCMD STOPCMD STDOUT STDERR",
+              "semantic_argument_patterns": {
+                "service_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "service_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "mq.process.configuration.read",
+      "description": "Read selected definition attributes for one exact MQ process without executing it.",
+      "provider_bindings": [
+        {
+          "provider_type": "mq",
+          "tool_name": "runmqsc",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "mqsc_command",
+              "source": "template",
+              "semantic_argument_names": [
+                "process_name"
+              ],
+              "value_template": "DISPLAY PROCESS({process_name}) DESCR APPLICID APPLTYPE USERDATA",
+              "semantic_argument_patterns": {
+                "process_name": "[A-Z][A-Z0-9._]{0,47}"
+              },
+              "required": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "text_content",
+            "content_media_type": "text/plain",
+            "content_block_index": 0,
+            "json_pointer": "",
+            "operation": "select",
+            "output_field": "process_configuration",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 50000,
+            "maximum_collection_items": 100
+          }
+        }
+      ]
+    }
+  ]
+}

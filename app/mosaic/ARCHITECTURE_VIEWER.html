@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MOSAIC architecture</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, sans-serif;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body {
+            background: Canvas;
+            color: CanvasText;
+        }
+
+        #toolbar {
+            display: flex;
+            gap: 0.5rem;
+            left: 1rem;
+            position: fixed;
+            top: 1rem;
+            z-index: 2;
+        }
+
+        button {
+            font: inherit;
+            padding: 0.45rem 0.75rem;
+        }
+
+        #viewport {
+            align-items: center;
+            cursor: grab;
+            display: flex;
+            height: 100%;
+            justify-content: center;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        #viewport.dragging {
+            cursor: grabbing;
+        }
+
+        #diagram {
+            transform-origin: center;
+            user-select: none;
+        }
+
+        #diagram svg {
+            display: block;
+            height: auto;
+            max-height: 90vh;
+            max-width: 95vw;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar" aria-label="Diagram controls">
+        <button id="zoom-in" type="button">Zoom in</button>
+        <button id="zoom-out" type="button">Zoom out</button>
+        <button id="reset" type="button">Reset</button>
+        <button id="fullscreen" type="button">Full screen</button>
+    </div>
+    <main id="viewport" aria-label="MOSAIC architecture diagram">
+        <div id="diagram" class="mermaid">
+flowchart LR
+    subgraph Consumers["Runtime Consumers"]
+        User["User / Client"]
+    end
+
+    subgraph Lifecycle["MOSAIC Registration and Lifecycle"]
+        SkillSource["Skill Marketplace<br/>(Git)"]
+        AdaRegistryAdapter["ADA Registry Adapter"]
+        CapabilityLifecycle["Capability Lifecycle<br/>(registration and validation)"]
+        SkillLifecycle["Skill Lifecycle<br/>(registration and validation)"]
+        CapabilityCatalogue["Versioned Capability Catalogue"]
+        SkillCatalogue["Versioned Skill Catalogue"]
+
+        AdaRegistryAdapter --> CapabilityLifecycle
+        CapabilityLifecycle --> CapabilityCatalogue
+        SkillSource --> SkillLifecycle
+        CapabilityCatalogue --> SkillLifecycle
+        SkillLifecycle --> SkillCatalogue
+    end
+
+    subgraph Provisioning["Deployment / Workspace Provisioning"]
+        RuntimeSnapshot["Versioned Validated Runtime Snapshot"]
+
+        CapabilityCatalogue --> RuntimeSnapshot
+        SkillCatalogue --> RuntimeSnapshot
+    end
+
+    subgraph Runtime["MOSAIC Agent GCP Runtime"]
+        InvocationService["ADA Invocation and Session Boundary"]
+        WorkspaceService["Workspace and Execution Profile Service"]
+        AgentRuntime["Agent Runtime"]
+        SkillLoader["Skill Discovery and Loader"]
+        CapabilityResolver["Capability Catalogue and Resolver"]
+        McpGateway["MCP Execution Gateway"]
+        LlmGateway["LLM Gateway Adapter"]
+
+        InvocationService --> WorkspaceService
+        WorkspaceService --> AgentRuntime
+        WorkspaceService -->|"activate capability version"| CapabilityResolver
+        WorkspaceService -->|"activate skill version"| SkillLoader
+        AgentRuntime -->|"load approved guidance"| SkillLoader
+        SkillLoader -->|"skill instructions"| AgentRuntime
+        AgentRuntime -->|"semantic capability request"| McpGateway
+        McpGateway -->|"local resolution and binding"| CapabilityResolver
+        CapabilityResolver -->|"prepared invocation"| McpGateway
+        AgentRuntime --> LlmGateway
+    end
+
+    RuntimeSnapshot -. "atomic hot reload outside request path" .-> WorkspaceService
+    User --> InvocationService
+
+    subgraph External["Preexisting Organisational Services"]
+        McpCatalogue["Authoritative MCP Catalogue<br/>(ADA contract TBC)"]
+        AiAccessLayer["AI Access Layer"]
+        ApprovedLlm["Vertex AI / Approved LLM"]
+        McpServers["Registered MCP Servers"]
+        EnterpriseSystems["Enterprise Systems"]
+        AdaNfr["ADA-managed Logging, Audit and Telemetry"]
+
+        McpCatalogue --> AdaRegistryAdapter
+        AiAccessLayer --> ApprovedLlm
+        McpServers --> EnterpriseSystems
+    end
+
+    LlmGateway --> AiAccessLayer
+    McpGateway -->|"provider invocation only"| McpServers
+
+    AgentRuntime -.-> AdaNfr
+        </div>
+    </main>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'default',
+        });
+
+        const diagram = document.getElementById('diagram');
+        const viewport = document.getElementById('viewport');
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let dragging = false;
+        let previousX = 0;
+        let previousY = 0;
+
+        const applyTransform = () => {
+            diagram.style.transform =
+                `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+        };
+
+        const setScale = (nextScale) => {
+            scale = Math.min(4, Math.max(0.25, nextScale));
+            applyTransform();
+        };
+
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            setScale(scale + 0.2);
+        });
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            setScale(scale - 0.2);
+        });
+        document.getElementById('reset').addEventListener('click', () => {
+            scale = 1;
+            offsetX = 0;
+            offsetY = 0;
+            applyTransform();
+        });
+        document.getElementById('fullscreen').addEventListener('click', () => {
+            document.documentElement.requestFullscreen();
+        });
+
+        viewport.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            setScale(scale + (event.deltaY < 0 ? 0.1 : -0.1));
+        }, { passive: false });
+
+        viewport.addEventListener('pointerdown', (event) => {
+            dragging = true;
+            previousX = event.clientX;
+            previousY = event.clientY;
+            viewport.classList.add('dragging');
+            viewport.setPointerCapture(event.pointerId);
+        });
+        viewport.addEventListener('pointermove', (event) => {
+            if (!dragging) {
+                return;
+            }
+            offsetX += event.clientX - previousX;
+            offsetY += event.clientY - previousY;
+            previousX = event.clientX;
+            previousY = event.clientY;
+            applyTransform();
+        });
+        viewport.addEventListener('pointerup', () => {
+            dragging = false;
+            viewport.classList.remove('dragging');
+        });
+    </script>
+</body>
+</html>

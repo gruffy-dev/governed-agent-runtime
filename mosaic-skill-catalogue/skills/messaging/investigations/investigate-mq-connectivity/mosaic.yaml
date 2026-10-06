@@ -1,0 +1,10 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names:
+  - mq.qmgr.status.read
+optional_capability_names:
+  - mq.listener.status.read
+  - mq.listener.configuration.read
+  - mq.channel.status.read
+  - mq.channel.configuration.read

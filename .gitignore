@@ -1,0 +1,50 @@
+# Local and environment-specific configuration
+config/local/
+.env
+.env.*
+!.env.example
+
+# Internal planning and generated outputs
+outputs/
+*.md
+!/README.md
+
+# Local runtime data
+.local/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Credentials and certificates
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python environments, bytecode, and tool caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editor and operating-system metadata
+.DS_Store
+**/.DS_Store
+**/.DS_Store/
+Thumbs.db
+.idea/
+.vscode/
+
+# Non-source document artefacts
+*.docx
+*.pptx
+*.xlsx
+*.xls
+*.pdf

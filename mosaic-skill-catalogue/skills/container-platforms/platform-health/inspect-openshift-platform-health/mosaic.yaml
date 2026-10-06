@@ -1,0 +1,12 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names: []
+optional_capability_names:
+  - openshift.clusteroperators.status.read
+  - openshift.clusteroperator.detail.read
+  - openshift.clusterversion.status.read
+  - openshift.clusterversion.detail.read
+  - openshift.machineconfigpools.status.read
+  - openshift.machineconfigpool.detail.read
+  - kubernetes.nodes.status.read
