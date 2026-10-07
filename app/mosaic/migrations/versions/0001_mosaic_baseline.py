@@ -1,0 +1,24 @@
+"""Establish the independently versioned MOSAIC database.
+
+Revision ID: 0001_mosaic_baseline
+Revises:
+Create Date: 2026-10-07
+"""
+
+from collections.abc import Sequence
+
+
+revision: str = '0001_mosaic_baseline'
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    """Establish the baseline without creating domain tables."""
+    pass
+
+
+def downgrade() -> None:
+    """Reverse the empty baseline revision."""
+    pass
