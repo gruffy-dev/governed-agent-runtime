@@ -22,7 +22,7 @@ class MosaicDatabaseConfiguration(BaseModel):
         default_factory=lambda: Path(
             os.getenv(
                 'MOSAIC_DATABASE_PATH',
-                '.local/mosaic/mosaic.db',
+                'app/mosaic/.adk/mosaic.db',
             )
         ),
         description=(

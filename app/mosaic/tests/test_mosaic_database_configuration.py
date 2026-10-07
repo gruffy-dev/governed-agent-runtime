@@ -15,13 +15,22 @@ class TestMosaicDatabaseConfiguration(unittest.TestCase):
 
         self.assertEqual(
             configuration.database_path,
-            Path('.local/mosaic/mosaic.db'),
+            Path('app/mosaic/.adk/mosaic.db'),
         )
         self.assertEqual(configuration.busy_timeout_seconds, 5)
         self.assertEqual(configuration.storage_mode, 'local')
         self.assertEqual(configuration.journal_mode, 'DELETE')
         self.assertEqual(configuration.synchronous_mode, 'FULL')
         self.assertTrue(configuration.resolved_database_path.is_absolute())
+
+    def test_local_database_is_next_to_ada_session_database(self) -> None:
+        with patch.dict('os.environ', {}, clear=True):
+            configuration = MosaicDatabaseConfiguration()
+
+        self.assertEqual(
+            configuration.database_path.parent / 'session.db',
+            Path('app/mosaic/.adk/session.db'),
+        )
 
     def test_mounted_database_path_is_applied(self) -> None:
         configured_path = '/mnt/persistent/mosaic.db'

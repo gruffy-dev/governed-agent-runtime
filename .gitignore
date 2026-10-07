@@ -11,6 +11,7 @@ outputs/
 
 # Local runtime data
 .local/
+.adk/
 *.db
 *.sqlite
 *.sqlite3
