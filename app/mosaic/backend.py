@@ -51,9 +51,34 @@ class Backend:
             ada_app_factory = create_app
 
         application = ada_app_factory()
+        Backend._register_readiness_endpoint(application)
         if application_configurer is not None:
             application_configurer(application)
         return application
+
+    @staticmethod
+    def _register_readiness_endpoint(application: Any) -> None:
+        """Register the internal readiness probe after successful startup.
+
+        Args:
+            application: ADA ASGI application exposing FastAPI route
+                registration.
+        """
+        application.add_api_route(
+            '/ready',
+            Backend._readiness,
+            methods=['GET'],
+            include_in_schema=False,
+        )
+
+    @staticmethod
+    def _readiness() -> dict[str, str]:
+        """Return the readiness state of the successfully created process.
+
+        Returns:
+            Stable readiness response for the deployment probe.
+        """
+        return {'status': 'ready'}
 
     @staticmethod
     def run(

@@ -15,7 +15,7 @@ class TestBackend(unittest.TestCase):
         migrator_type: Mock,
     ) -> None:
         events: list[str] = []
-        application = object()
+        application = Mock()
         database = database_type.return_value
         migrator = migrator_type.return_value
         configuration = MosaicDatabaseConfiguration()
@@ -30,12 +30,16 @@ class TestBackend(unittest.TestCase):
             events.append('ada_app_created')
             return application
 
+        def register_readiness(*_args: object, **_kwargs: object) -> None:
+            events.append('readiness_registered')
+
         def configure_application(created_application: object) -> None:
             self.assertIs(created_application, application)
             events.append('outer_application_configured')
 
         migrator.upgrade.side_effect = upgrade_database
         database.dispose.side_effect = dispose_database
+        application.add_api_route.side_effect = register_readiness
 
         result = Backend.create_application(
             ada_app_factory=create_ada_application,
@@ -52,9 +56,19 @@ class TestBackend(unittest.TestCase):
                 'database_upgraded',
                 'database_disposed',
                 'ada_app_created',
+                'readiness_registered',
                 'outer_application_configured',
             ],
         )
+        application.add_api_route.assert_called_once_with(
+            '/ready',
+            Backend._readiness,
+            methods=['GET'],
+            include_in_schema=False,
+        )
+
+    def test_readiness_response_is_stable(self) -> None:
+        self.assertEqual(Backend._readiness(), {'status': 'ready'})
 
     @patch('mosaic.backend.MosaicDatabaseMigrator')
     @patch('mosaic.backend.MosaicDatabase')
