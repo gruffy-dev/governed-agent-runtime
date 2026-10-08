@@ -9,7 +9,7 @@ from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfigurat
 
 
 class TestMosaicDatabaseMigrator(unittest.TestCase):
-    def test_upgrade_creates_baseline_and_is_idempotent(self) -> None:
+    def test_upgrade_reaches_current_schema_and_is_idempotent(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             database = MosaicDatabase(
                 MosaicDatabaseConfiguration(
@@ -30,7 +30,7 @@ class TestMosaicDatabaseMigrator(unittest.TestCase):
             finally:
                 database.dispose()
 
-            self.assertEqual(revision, '0001_mosaic_baseline')
+            self.assertEqual(revision, '0002_user_access')
 
     def test_upgrade_failure_is_propagated(self) -> None:
         with TemporaryDirectory() as temporary_directory:

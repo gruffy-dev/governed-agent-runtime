@@ -75,6 +75,7 @@ class MosaicDatabase:
         """
         cursor = database_connection.cursor()
         try:
+            cursor.execute('PRAGMA foreign_keys=ON')
             cursor.execute(
                 'PRAGMA journal_mode='
                 f'{self._configuration.journal_mode}'

@@ -18,6 +18,9 @@ class TestMosaicDatabase(unittest.TestCase):
 
             try:
                 with database.engine.connect() as connection:
+                    foreign_keys = connection.exec_driver_sql(
+                        'PRAGMA foreign_keys'
+                    ).scalar_one()
                     journal_mode = connection.exec_driver_sql(
                         'PRAGMA journal_mode'
                     ).scalar_one()
@@ -30,6 +33,7 @@ class TestMosaicDatabase(unittest.TestCase):
             finally:
                 database.dispose()
 
+            self.assertEqual(foreign_keys, 1)
             self.assertEqual(journal_mode, 'delete')
             self.assertEqual(synchronous_mode, 2)
             self.assertEqual(busy_timeout, 5000)
