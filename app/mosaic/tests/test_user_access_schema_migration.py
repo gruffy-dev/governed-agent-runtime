@@ -63,7 +63,7 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
             )
             self.assertEqual(
                 user_columns,
-                {'user_id', 'status', 'created_at', 'disabled_at'},
+                {'user_id', 'is_enabled', 'created_at', 'disabled_at'},
             )
             self.assertEqual(
                 token_columns,
@@ -71,7 +71,7 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
                     'token_id',
                     'user_id',
                     'token_hash',
-                    'status',
+                    'is_enabled',
                     'created_at',
                     'disabled_at',
                     'rotated_at',
@@ -93,16 +93,16 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
             self.assertEqual(
                 user_constraints,
                 {
-                    'ck_users_status',
-                    'ck_users_status_timestamp',
+                    'ck_users_enabled_timestamp',
+                    'ck_users_is_enabled',
                     'ck_users_user_id_length',
                 },
             )
             self.assertEqual(
                 token_constraints,
                 {
-                    'ck_access_tokens_status',
-                    'ck_access_tokens_status_timestamp',
+                    'ck_access_tokens_enabled_timestamp',
+                    'ck_access_tokens_is_enabled',
                     'ck_access_tokens_token_hash_length',
                     'ck_access_tokens_token_id_length',
                 },
@@ -114,8 +114,10 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
             )
             self.assertTrue(indexes['ix_access_tokens_token_hash']['unique'])
             self.assertEqual(
-                indexes['ix_access_tokens_user_id_status']['column_names'],
-                ['user_id', 'status'],
+                indexes[
+                    'ix_access_tokens_user_id_is_enabled'
+                ]['column_names'],
+                ['user_id', 'is_enabled'],
             )
 
     def test_foreign_key_and_unique_token_hash_are_enforced(self) -> None:
@@ -133,17 +135,17 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
                 with database.engine.begin() as connection:
                     connection.exec_driver_sql(
                         "INSERT INTO users "
-                        "(user_id, status, created_at, disabled_at) "
-                        "VALUES ('user-example', 'enabled', "
+                        "(user_id, is_enabled, created_at, disabled_at) "
+                        "VALUES ('user-example', TRUE, "
                         "CURRENT_TIMESTAMP, NULL)"
                     )
                     connection.exec_driver_sql(
                         "INSERT INTO access_tokens "
-                        "(token_id, user_id, token_hash, status, "
+                        "(token_id, user_id, token_hash, is_enabled, "
                         "created_at, disabled_at, rotated_at) VALUES "
                         "('00000000-0000-4000-8000-000000000001', "
                         "'user-example', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'active', "
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', TRUE, "
                         "CURRENT_TIMESTAMP, NULL, NULL)"
                     )
 
@@ -153,13 +155,13 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
                 ):
                     connection.exec_driver_sql(
                         "INSERT INTO access_tokens "
-                        "(token_id, user_id, token_hash, status, "
+                        "(token_id, user_id, token_hash, is_enabled, "
                         "created_at, disabled_at, rotated_at) VALUES "
                         "('00000000-0000-4000-8000-000000000002', "
                         "'missing-user', "
                         "'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', "
-                        "'active', CURRENT_TIMESTAMP, NULL, NULL)"
+                        "TRUE, CURRENT_TIMESTAMP, NULL, NULL)"
                     )
 
                 with (
@@ -168,13 +170,13 @@ class TestUserAccessSchemaMigration(unittest.TestCase):
                 ):
                     connection.exec_driver_sql(
                         "INSERT INTO access_tokens "
-                        "(token_id, user_id, token_hash, status, "
+                        "(token_id, user_id, token_hash, is_enabled, "
                         "created_at, disabled_at, rotated_at) VALUES "
                         "('00000000-0000-4000-8000-000000000003', "
                         "'user-example', "
                         "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
-                        "'active', CURRENT_TIMESTAMP, NULL, NULL)"
+                        "TRUE, CURRENT_TIMESTAMP, NULL, NULL)"
                     )
             finally:
                 database.dispose()

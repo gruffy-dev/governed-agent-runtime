@@ -22,7 +22,14 @@ def upgrade() -> None:
     op.create_table(
         'users',
         sa.Column('user_id', sa.String(length=255), nullable=False),
-        sa.Column('status', sa.String(length=16), nullable=False),
+        sa.Column(
+            'is_enabled',
+            sa.Boolean(
+                create_constraint=True,
+                name='ck_users_is_enabled',
+            ),
+            nullable=False,
+        ),
         sa.Column(
             'created_at',
             sa.DateTime(timezone=True),
@@ -34,13 +41,9 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.CheckConstraint(
-            "status IN ('enabled', 'disabled')",
-            name='ck_users_status',
-        ),
-        sa.CheckConstraint(
-            "(status = 'enabled' AND disabled_at IS NULL) OR "
-            "(status = 'disabled' AND disabled_at IS NOT NULL)",
-            name='ck_users_status_timestamp',
+            '(is_enabled AND disabled_at IS NULL) OR '
+            '(NOT is_enabled AND disabled_at IS NOT NULL)',
+            name='ck_users_enabled_timestamp',
         ),
         sa.CheckConstraint(
             'length(user_id) BETWEEN 1 AND 255',
@@ -53,7 +56,14 @@ def upgrade() -> None:
         sa.Column('token_id', sa.String(length=36), nullable=False),
         sa.Column('user_id', sa.String(length=255), nullable=False),
         sa.Column('token_hash', sa.String(length=64), nullable=False),
-        sa.Column('status', sa.String(length=16), nullable=False),
+        sa.Column(
+            'is_enabled',
+            sa.Boolean(
+                create_constraint=True,
+                name='ck_access_tokens_is_enabled',
+            ),
+            nullable=False,
+        ),
         sa.Column(
             'created_at',
             sa.DateTime(timezone=True),
@@ -78,17 +88,13 @@ def upgrade() -> None:
             name='ck_access_tokens_token_hash_length',
         ),
         sa.CheckConstraint(
-            "status IN ('active', 'disabled', 'rotated')",
-            name='ck_access_tokens_status',
-        ),
-        sa.CheckConstraint(
-            "(status = 'active' AND disabled_at IS NULL "
-            "AND rotated_at IS NULL) OR "
-            "(status = 'disabled' AND disabled_at IS NOT NULL "
-            "AND rotated_at IS NULL) OR "
-            "(status = 'rotated' AND disabled_at IS NULL "
-            "AND rotated_at IS NOT NULL)",
-            name='ck_access_tokens_status_timestamp',
+            '(is_enabled AND disabled_at IS NULL '
+            'AND rotated_at IS NULL) OR '
+            '(NOT is_enabled AND disabled_at IS NOT NULL '
+            'AND rotated_at IS NULL) OR '
+            '(NOT is_enabled AND disabled_at IS NULL '
+            'AND rotated_at IS NOT NULL)',
+            name='ck_access_tokens_enabled_timestamp',
         ),
         sa.ForeignKeyConstraint(
             ['user_id'],
@@ -105,9 +111,9 @@ def upgrade() -> None:
         unique=True,
     )
     op.create_index(
-        'ix_access_tokens_user_id_status',
+        'ix_access_tokens_user_id_is_enabled',
         'access_tokens',
-        ['user_id', 'status'],
+        ['user_id', 'is_enabled'],
         unique=False,
     )
 
@@ -115,7 +121,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove pilot user and access-token storage."""
     op.drop_index(
-        'ix_access_tokens_user_id_status',
+        'ix_access_tokens_user_id_is_enabled',
         table_name='access_tokens',
     )
     op.drop_index(
