@@ -1,0 +1,2 @@
+class StaleWorkspaceVersionError(RuntimeError):
+    pass
