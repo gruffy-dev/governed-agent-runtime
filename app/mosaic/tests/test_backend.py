@@ -101,6 +101,14 @@ class TestBackend(unittest.TestCase):
             database_configuration = MosaicDatabaseConfiguration(
                 database_path=Path(temporary_directory) / 'mosaic.db'
             )
+            backend_databases: list[MosaicDatabase] = []
+
+            def create_backend_database(
+                configuration: MosaicDatabaseConfiguration,
+            ) -> MosaicDatabase:
+                database = MosaicDatabase(configuration)
+                backend_databases.append(database)
+                return database
 
             def configure_application(application: FastAPI) -> None:
                 async def protected_route(
@@ -118,11 +126,15 @@ class TestBackend(unittest.TestCase):
                     methods=['GET'],
                 )
 
-            application = Backend.create_application(
-                ada_app_factory=FastAPI,
-                application_configurer=configure_application,
-                database_configuration=database_configuration,
-            )
+            with patch(
+                'mosaic.backend.MosaicDatabase',
+                side_effect=create_backend_database,
+            ):
+                application = Backend.create_application(
+                    ada_app_factory=FastAPI,
+                    application_configurer=configure_application,
+                    database_configuration=database_configuration,
+                )
             database = MosaicDatabase(database_configuration)
             created_at = datetime.now(UTC)
             try:
@@ -151,6 +163,8 @@ class TestBackend(unittest.TestCase):
                     )
             finally:
                 database.dispose()
+                for backend_database in backend_databases:
+                    backend_database.dispose()
 
         self.assertEqual(missing_response.status_code, 401)
         self.assertEqual(valid_response.status_code, 200)
