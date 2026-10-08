@@ -1,25 +1,29 @@
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
+from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .pilot_bearer_authenticator import PilotBearerAuthenticator
 from ...models.identity.trusted_user_context import TrustedUserContext
 
 
-class BearerAuthenticationMiddleware:
+class PilotAuthenticationMiddleware:
     def __init__(
         self,
         app: ASGIApp,
         authenticator: PilotBearerAuthenticator,
+        cookie_name: str,
     ) -> None:
         """
-        Protect the complete application with pilot bearer authentication.
+        Protect the application with pilot bearer and cookie authentication.
 
         :param app: Inner ADA and MOSAIC ASGI application.
         :param authenticator: Pilot credential validation boundary.
+        :param cookie_name: Name of the protected browser credential cookie.
         """
         self._app = app
         self._authenticator = authenticator
+        self._cookie_name = cookie_name
 
     async def __call__(
         self,
@@ -41,10 +45,7 @@ class BearerAuthenticationMiddleware:
             await self._app(scope, receive, send)
             return
 
-        authorization_values = Headers(scope=scope).getlist(
-            'authorization'
-        )
-        trusted_user_context = self._authenticate(authorization_values)
+        trusted_user_context = self._authenticate(scope)
         if trusted_user_context is None:
             await self._reject(scope, receive, send)
             return
@@ -54,31 +55,52 @@ class BearerAuthenticationMiddleware:
         ] = trusted_user_context
         await self._app(scope, receive, send)
 
-    def _authenticate(
-        self,
-        authorization_values: list[str],
-    ) -> TrustedUserContext | None:
+    def _authenticate(self, scope: Scope) -> TrustedUserContext | None:
         """
-        Parse exactly one strict bearer header and validate its credential.
+        Validate exactly one bearer-header or browser-cookie credential.
 
-        :param authorization_values: Authorization header values from ASGI.
+        :param scope: ASGI request scope containing headers and cookies.
 
         :return: Immutable trusted context, or ``None`` when unauthorized.
         """
-        if len(authorization_values) != 1:
-            return None
-        scheme, separator, plaintext_token = authorization_values[0].partition(
-            ' '
+        authorization_values = Headers(scope=scope).getlist(
+            'authorization'
         )
+        cookie_token = HTTPConnection(scope).cookies.get(self._cookie_name)
+        if authorization_values and cookie_token is not None:
+            return None
+        if authorization_values:
+            plaintext_token = self._parse_bearer(authorization_values)
+        else:
+            plaintext_token = cookie_token
         if (
-            separator != ' '
-            or scheme.casefold() != 'bearer'
+            plaintext_token is None
             or not plaintext_token
             or plaintext_token != plaintext_token.strip()
             or any(character.isspace() for character in plaintext_token)
         ):
             return None
         return self._authenticator.authenticate(plaintext_token)
+
+    @staticmethod
+    def _parse_bearer(
+        authorization_values: list[str],
+    ) -> str | None:
+        """
+        Parse exactly one strict Authorization bearer value.
+
+        :param authorization_values: Authorization header values from ASGI.
+
+        :return: Opaque bearer token, or ``None`` when malformed.
+        """
+        if len(authorization_values) != 1:
+            return None
+        scheme, separator, plaintext_token = authorization_values[0].partition(
+            ' '
+        )
+        if separator != ' ' or scheme.casefold() != 'bearer':
+            return None
+        return plaintext_token
 
     @staticmethod
     def _is_unauthenticated_path(scope: Scope) -> bool:
@@ -93,7 +115,10 @@ class BearerAuthenticationMiddleware:
         method = scope.get('method', '')
         if path in {'/health', '/ready'}:
             return True
-        if path == '/api/v1/auth/token' and method == 'POST':
+        if path in {
+            '/api/v1/auth/token',
+            '/api/v1/auth/logout',
+        } and method == 'POST':
             return True
         return path == '/api/v1/admin' or path.startswith(
             '/api/v1/admin/'

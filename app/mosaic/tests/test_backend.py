@@ -13,6 +13,7 @@ from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.backend_configuration import BackendConfiguration
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
+from mosaic.models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
 
 
@@ -134,6 +135,12 @@ class TestBackend(unittest.TestCase):
                     ada_app_factory=FastAPI,
                     application_configurer=configure_application,
                     database_configuration=database_configuration,
+                    pilot_authentication_configuration=(
+                        PilotAuthenticationConfiguration(
+                            mode='local',
+                            secure_cookie=False,
+                        )
+                    ),
                 )
             database = MosaicDatabase(database_configuration)
             created_at = datetime.now(UTC)
@@ -161,6 +168,24 @@ class TestBackend(unittest.TestCase):
                             )
                         },
                     )
+                    sign_in_response = client.post(
+                        '/api/v1/auth/token',
+                        json={'token': 'persisted-valid-token'},
+                    )
+                    cookie_response = client.get('/protected')
+                    with (
+                        database.create_session() as session,
+                        session.begin(),
+                    ):
+                        UserAccessRepository(session).disable_user(
+                            'authenticated-user',
+                            created_at,
+                        )
+                    disabled_cookie_response = client.get('/protected')
+                    logout_response = client.post(
+                        '/api/v1/auth/logout'
+                    )
+                    after_logout_response = client.get('/protected')
             finally:
                 database.dispose()
                 for backend_database in backend_databases:
@@ -172,6 +197,16 @@ class TestBackend(unittest.TestCase):
             valid_response.json(),
             {'user_id': 'authenticated-user'},
         )
+        self.assertEqual(sign_in_response.status_code, 204)
+        self.assertNotIn('Secure', sign_in_response.headers['Set-Cookie'])
+        self.assertEqual(cookie_response.status_code, 200)
+        self.assertEqual(
+            cookie_response.json(),
+            {'user_id': 'authenticated-user'},
+        )
+        self.assertEqual(disabled_cookie_response.status_code, 401)
+        self.assertEqual(logout_response.status_code, 204)
+        self.assertEqual(after_logout_response.status_code, 401)
 
     @patch('mosaic.backend.MosaicDatabaseMigrator')
     @patch('mosaic.backend.MosaicDatabase')

@@ -6,12 +6,12 @@ from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from mosaic.components.identity.bearer_authentication_middleware import BearerAuthenticationMiddleware
+from mosaic.components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
 from mosaic.models.identity.trusted_user_context import TrustedUserContext
 
 
-class TestBearerAuthenticationMiddleware(unittest.TestCase):
-    def test_valid_token_sets_trusted_context_before_inner_middleware(
+class TestPilotAuthenticationMiddleware(unittest.TestCase):
+    def test_valid_bearer_sets_context_before_inner_middleware(
         self,
     ) -> None:
         application = FastAPI()
@@ -47,8 +47,9 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
             user_id='authenticated-user'
         )
         application.add_middleware(
-            BearerAuthenticationMiddleware,
+            PilotAuthenticationMiddleware,
             authenticator=authenticator,
+            cookie_name='mosaic_pilot_session',
         )
 
         with TestClient(application) as client:
@@ -74,7 +75,39 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
         self.assertEqual(observed_user_ids, ['authenticated-user'])
         authenticator.authenticate.assert_called_once_with('valid-token')
 
-    def test_all_invalid_credentials_return_same_generic_response(
+    def test_valid_cookie_establishes_trusted_context(self) -> None:
+        application = FastAPI()
+
+        @application.get('/protected')
+        async def protected(request: Request) -> dict[str, str]:
+            return {
+                'user_id': request.state.trusted_user_context.user_id
+            }
+
+        authenticator = Mock()
+        authenticator.authenticate.return_value = TrustedUserContext(
+            user_id='cookie-user'
+        )
+        application.add_middleware(
+            PilotAuthenticationMiddleware,
+            authenticator=authenticator,
+            cookie_name='mosaic_pilot_session',
+        )
+
+        with TestClient(application) as client:
+            client.cookies.set(
+                'mosaic_pilot_session',
+                'valid-cookie-token',
+            )
+            response = client.get('/protected')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'user_id': 'cookie-user'})
+        authenticator.authenticate.assert_called_once_with(
+            'valid-cookie-token'
+        )
+
+    def test_ambiguous_or_invalid_credentials_return_generic_response(
         self,
     ) -> None:
         application = FastAPI()
@@ -86,8 +119,9 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
         authenticator = Mock()
         authenticator.authenticate.return_value = None
         application.add_middleware(
-            BearerAuthenticationMiddleware,
+            PilotAuthenticationMiddleware,
             authenticator=authenticator,
+            cookie_name='mosaic_pilot_session',
         )
 
         with TestClient(application) as client:
@@ -106,8 +140,16 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
                     headers={'Authorization': 'Bearer unknown-token'},
                 ),
             )
+            client.cookies.set(
+                'mosaic_pilot_session',
+                'valid-cookie-token',
+            )
+            ambiguous_response = client.get(
+                '/protected',
+                headers={'Authorization': 'Bearer valid-token'},
+            )
 
-        for response in responses:
+        for response in (*responses, ambiguous_response):
             self.assertEqual(response.status_code, 401)
             self.assertEqual(response.json(), {'detail': 'Unauthorized'})
             self.assertEqual(
@@ -132,14 +174,19 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
         async def sign_in() -> dict[str, str]:
             return {'status': 'available'}
 
+        @application.post('/api/v1/auth/logout')
+        async def sign_out() -> dict[str, str]:
+            return {'status': 'available'}
+
         @application.get('/api/v1/admin/users')
         async def administration() -> dict[str, str]:
             return {'status': 'separately-protected'}
 
         authenticator = Mock()
         application.add_middleware(
-            BearerAuthenticationMiddleware,
+            PilotAuthenticationMiddleware,
             authenticator=authenticator,
+            cookie_name='mosaic_pilot_session',
         )
 
         with TestClient(application) as client:
@@ -147,6 +194,7 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
                 client.get('/health'),
                 client.get('/ready'),
                 client.post('/api/v1/auth/token'),
+                client.post('/api/v1/auth/logout'),
                 client.get('/api/v1/admin/users'),
             )
 
@@ -155,7 +203,7 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
         )
         authenticator.authenticate.assert_not_called()
 
-    def test_websocket_rejects_missing_bearer_token(self) -> None:
+    def test_websocket_rejects_missing_credential(self) -> None:
         application = FastAPI()
 
         @application.websocket('/run_live')
@@ -163,8 +211,9 @@ class TestBearerAuthenticationMiddleware(unittest.TestCase):
             await websocket.accept()
 
         application.add_middleware(
-            BearerAuthenticationMiddleware,
+            PilotAuthenticationMiddleware,
             authenticator=Mock(),
+            cookie_name='mosaic_pilot_session',
         )
 
         with (

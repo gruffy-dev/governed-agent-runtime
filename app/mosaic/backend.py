@@ -5,6 +5,7 @@ from .components.persistence.mosaic_database import MosaicDatabase
 from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from .models.backend_configuration import BackendConfiguration
 from .models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
+from .models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
 from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
@@ -16,6 +17,9 @@ class Backend:
         ada_app_factory: Callable[[], Any] | None = None,
         application_configurer: Callable[[Any], None] | None = None,
         database_configuration: MosaicDatabaseConfiguration | None = None,
+        pilot_authentication_configuration: (
+            PilotAuthenticationConfiguration | None
+        ) = None,
         pilot_administration_configuration: (
             PilotAdministrationConfiguration | None
         ) = None,
@@ -30,6 +34,8 @@ class Backend:
         :param ada_app_factory: Optional ADA factory used by isolated tests.
         :param application_configurer: Optional outer-boundary configurator.
         :param database_configuration: Optional MOSAIC database configuration.
+        :param pilot_authentication_configuration: Optional pilot browser
+            authentication and cookie configuration.
         :param pilot_administration_configuration: Optional temporary pilot
             administration configuration.
         :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
@@ -40,6 +46,10 @@ class Backend:
         """
         if database_configuration is None:
             database_configuration = MosaicDatabaseConfiguration()
+        if pilot_authentication_configuration is None:
+            pilot_authentication_configuration = (
+                PilotAuthenticationConfiguration()
+            )
         if pilot_administration_configuration is None:
             pilot_administration_configuration = (
                 PilotAdministrationConfiguration()
@@ -59,15 +69,22 @@ class Backend:
         Backend._register_readiness_endpoint(application)
         if application_configurer is not None:
             application_configurer(application)
-        from .components.identity.bearer_authentication_middleware import BearerAuthenticationMiddleware
+        from .components.identity.pilot_authentication_api import PilotAuthenticationApi
+        from .components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
         from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
 
         runtime_database = MosaicDatabase(database_configuration)
         try:
+            authenticator = PilotBearerAuthenticator(runtime_database)
             application.add_middleware(
-                BearerAuthenticationMiddleware,
-                authenticator=PilotBearerAuthenticator(runtime_database),
+                PilotAuthenticationMiddleware,
+                authenticator=authenticator,
+                cookie_name=pilot_authentication_configuration.cookie_name,
             )
+            PilotAuthenticationApi(
+                pilot_authentication_configuration,
+                authenticator,
+            ).register_routes(application)
             if not pilot_administration_configuration.enabled:
                 return application
 
