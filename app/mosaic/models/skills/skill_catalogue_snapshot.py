@@ -36,13 +36,12 @@ class SkillCatalogueSnapshot(BaseModel):
 
     @model_validator(mode='after')
     def validate_snapshot(self) -> Self:
-        """Validate timestamp awareness and unique skill names.
+        """
+        Validate timestamp awareness and unique Skill and group references.
 
-        Returns:
-            The validated catalogue snapshot.
+        :return: Validated immutable catalogue snapshot.
 
-        Raises:
-            ValueError: If the timestamp is naive or skill names repeat.
+        :raises ValueError: If timestamps, Skills or groups are invalid.
         """
         if self.loaded_at.tzinfo is None:
             raise ValueError('loaded_at must be timezone-aware.')
