@@ -1,6 +1,10 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from mosaic.backend import Backend
@@ -150,11 +154,35 @@ class TestBackend(unittest.TestCase):
         api_type.return_value.register_routes.assert_called_once_with(
             application
         )
-        application.add_event_handler.assert_called_once_with(
-            'shutdown',
-            administration_database.dispose,
-        )
         administration_database.dispose.assert_not_called()
+
+    def test_enabled_pilot_administration_supports_fastapi_application(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            application = Backend.create_application(
+                ada_app_factory=FastAPI,
+                database_configuration=MosaicDatabaseConfiguration(
+                    database_path=(
+                        Path(temporary_directory) / 'mosaic.db'
+                    )
+                ),
+                pilot_administration_configuration=(
+                    PilotAdministrationConfiguration(
+                        enabled=True,
+                        administrator_secret=SecretStr('a' * 32),
+                    )
+                ),
+                skill_catalogue_snapshot=Mock(),
+            )
+            with TestClient(application) as client:
+                users_response = client.get('/api/v1/admin/users')
+                skills_response = client.get(
+                    '/api/v1/admin/workspaces/pilot-user/skills'
+                )
+
+        self.assertEqual(users_response.status_code, 403)
+        self.assertEqual(skills_response.status_code, 403)
 
     def test_startup_uses_validated_configuration(self) -> None:
         runner = Mock()

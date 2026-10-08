@@ -77,10 +77,6 @@ class Backend:
                     pilot_administration_configuration,
                     administration_service,
                 ).register_routes(application)
-                application.add_event_handler(
-                    'shutdown',
-                    administration_database.dispose,
-                )
             except Exception:
                 administration_database.dispose()
                 raise
