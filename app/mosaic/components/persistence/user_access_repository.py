@@ -10,7 +10,8 @@ from .user_record import UserRecord
 
 class UserAccessRepository:
     def __init__(self, session: Session) -> None:
-        """Bind user and token operations to one caller-owned transaction.
+        """
+        Bind user and token operations to one caller-owned transaction.
 
         :param session: SQLAlchemy session controlled by the calling service.
         """
@@ -21,7 +22,8 @@ class UserAccessRepository:
         user_id: str,
         created_at: datetime,
     ) -> UserRecord:
-        """Add one enabled user with an immutable identifier.
+        """
+        Add one enabled user with an immutable identifier.
 
         :param user_id: Unique user identifier owned by MOSAIC.
         :param created_at: Time at which the user is created.
@@ -47,7 +49,8 @@ class UserAccessRepository:
         plaintext_token: str,
         created_at: datetime,
     ) -> AccessTokenRecord:
-        """Hash and add one enabled access token for an enabled user.
+        """
+        Hash and add one enabled access token for an enabled user.
 
         :param token_id: Application-generated UUID string for the token row.
         :param user_id: Identifier of the token-owning user.
@@ -80,7 +83,8 @@ class UserAccessRepository:
         self,
         plaintext_token: str,
     ) -> UserRecord | None:
-        """Resolve an enabled user through an enabled access token.
+        """
+        Resolve an enabled user through an enabled access token.
 
         :param plaintext_token: Opaque caller credential to hash for lookup.
 
@@ -101,12 +105,25 @@ class UserAccessRepository:
         )
         return self._session.scalar(statement)
 
+    def list_users(self) -> tuple[UserRecord, ...]:
+        """
+        List users in stable identifier order without token material.
+
+        :return: User records ordered by immutable user identifier.
+        """
+        return tuple(
+            self._session.scalars(
+                select(UserRecord).order_by(UserRecord.user_id)
+            )
+        )
+
     def disable_user(
         self,
         user_id: str,
         disabled_at: datetime,
     ) -> bool:
-        """Disable an enabled user without changing its immutable identifier.
+        """
+        Disable an enabled user without changing its immutable identifier.
 
         :param user_id: Identifier of the user to disable.
         :param disabled_at: Time at which access is disabled.
@@ -127,7 +144,8 @@ class UserAccessRepository:
         token_id: str,
         disabled_at: datetime,
     ) -> bool:
-        """Disable one enabled token without changing other user tokens.
+        """
+        Disable one enabled token without changing other user tokens.
 
         :param token_id: Identifier of the token to disable.
         :param disabled_at: Time at which access is disabled.
@@ -145,7 +163,8 @@ class UserAccessRepository:
 
     @staticmethod
     def _hash_token(plaintext_token: str) -> str:
-        """Create the deterministic SHA-256 digest used for token lookup.
+        """
+        Create the deterministic SHA-256 digest used for token lookup.
 
         :param plaintext_token: Opaque token to hash without retaining it.
 
