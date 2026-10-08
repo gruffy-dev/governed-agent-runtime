@@ -1,5 +1,3 @@
-"""Parser for standard Agent Skills packages with MOSAIC metadata."""
-
 import json
 import re
 import stat
@@ -20,25 +18,20 @@ from ...models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
 class SkillPackageParser:
-    """Validate a repository export and construct an immutable snapshot."""
-
     def parse_catalogue(
         self,
         repository_root: Path,
         commit_sha: str,
     ) -> SkillCatalogueSnapshot:
-        """Parse every package below the repository's ``skills`` directory.
+        """
+        Parse every package below the repository's ``skills`` directory.
 
-        Args:
-            repository_root: Root of the exported Git commit.
-            commit_sha: Full Git object identifier for the exported commit.
+        :param repository_root: Root of the exported Git commit.
+        :param commit_sha: Full Git object identifier for the exported commit.
 
-        Returns:
-            An immutable snapshot containing every validated skill.
+        :return: Immutable snapshot containing Skills and current groups.
 
-        Raises:
-            ValueError: If the repository or any skill package violates the
-                catalogue contract.
+        :raises ValueError: If the repository or a package is invalid.
         """
         skills_root = repository_root / 'skills'
         if not skills_root.is_dir() or skills_root.is_symlink():
@@ -75,17 +68,14 @@ class SkillPackageParser:
         self,
         skills_root: Path,
     ) -> tuple[Path, ...]:
-        """Discover packages at the required domain/function/name depth.
+        """
+        Discover packages at the required domain/function/name depth.
 
-        Args:
-            skills_root: Validated root of the skill catalogue.
+        :param skills_root: Validated root of the Skill catalogue.
 
-        Returns:
-            Deterministically ordered package directories.
+        :return: Deterministically ordered package directories.
 
-        Raises:
-            ValueError: If no packages exist, a package is at the wrong
-                depth, or MOSAIC metadata is not paired with ``SKILL.md``.
+        :raises ValueError: If packages are absent or structurally invalid.
         """
         skill_documents = sorted(
             skills_root.rglob('SKILL.md'),
@@ -149,15 +139,13 @@ class SkillPackageParser:
         skills_root: Path,
         package_directory: Path,
     ) -> None:
-        """Validate the catalogue's domain/function/skill-name hierarchy.
+        """
+        Validate the catalogue's domain/function/skill-name hierarchy.
 
-        Args:
-            skills_root: Validated root of the skill catalogue.
-            package_directory: Candidate package directory.
+        :param skills_root: Validated root of the Skill catalogue.
+        :param package_directory: Candidate package directory.
 
-        Raises:
-            ValueError: If the package is outside the root, at the wrong
-                depth, or uses an invalid hierarchy segment.
+        :raises ValueError: If the package hierarchy is invalid.
         """
         self._validate_contained_path(skills_root, package_directory)
         try:
@@ -184,18 +172,15 @@ class SkillPackageParser:
         skills_root: Path,
         package_directory: Path,
     ) -> Skill:
-        """Parse one standard Agent Skill and its MOSAIC extension.
+        """
+        Parse one standard Agent Skill and its MOSAIC extension.
 
-        Args:
-            skills_root: Validated root containing all skill packages.
-            package_directory: Directory of the package being parsed.
+        :param skills_root: Validated root containing all Skill packages.
+        :param package_directory: Directory of the package being parsed.
 
-        Returns:
-            The immutable runtime skill constructed from the package.
+        :return: Immutable runtime Skill constructed from the package.
 
-        Raises:
-            ValueError: If package content is missing, malformed, unsafe, or
-                inconsistent.
+        :raises ValueError: If package content is invalid or unsafe.
         """
         self._validate_contained_path(skills_root, package_directory)
         self._validate_non_executable_scripts(package_directory)
@@ -263,17 +248,14 @@ class SkillPackageParser:
         self,
         skill_document: str,
     ) -> tuple[dict[str, Any], str]:
-        """Separate and parse YAML frontmatter from Markdown instructions.
+        """
+        Separate and parse YAML frontmatter from Markdown instructions.
 
-        Args:
-            skill_document: Complete UTF-8 text of ``SKILL.md``.
+        :param skill_document: Complete UTF-8 text of ``SKILL.md``.
 
-        Returns:
-            Parsed frontmatter mapping and non-empty Markdown instructions.
+        :return: Parsed frontmatter and non-empty Markdown instructions.
 
-        Raises:
-            ValueError: If frontmatter delimiters, YAML, or instructions are
-                invalid.
+        :raises ValueError: If frontmatter or instructions are invalid.
         """
         lines = skill_document.splitlines()
         if not lines or lines[0].strip() != '---':
@@ -312,17 +294,15 @@ class SkillPackageParser:
         package_directory: Path,
         relative_path: Path,
     ) -> dict[str, Any]:
-        """Read a required UTF-8 YAML file as a mapping.
+        """
+        Read a required UTF-8 YAML file as a mapping.
 
-        Args:
-            package_directory: Root directory of the skill package.
-            relative_path: Safe path of the required YAML file.
+        :param package_directory: Root directory of the Skill package.
+        :param relative_path: Safe path of the required YAML file.
 
-        Returns:
-            Parsed YAML mapping.
+        :return: Parsed YAML mapping.
 
-        Raises:
-            ValueError: If the file or YAML is invalid.
+        :raises ValueError: If the file or YAML is invalid.
         """
         text = self._read_required_text(package_directory, relative_path)
         return self._parse_yaml_mapping(text, str(relative_path))
@@ -332,17 +312,15 @@ class SkillPackageParser:
         text: str,
         source_name: str,
     ) -> dict[str, Any]:
-        """Parse trusted-format YAML with safe construction.
+        """
+        Parse trusted-format YAML with safe construction.
 
-        Args:
-            text: YAML content to parse.
-            source_name: Safe source label used in validation errors.
+        :param text: YAML content to parse.
+        :param source_name: Safe source label used in validation errors.
 
-        Returns:
-            Parsed YAML mapping.
+        :return: Parsed YAML mapping.
 
-        Raises:
-            ValueError: If YAML is malformed or not a map.
+        :raises ValueError: If YAML is malformed or not a mapping.
         """
         try:
             parsed_value = yaml.safe_load(text)
@@ -362,17 +340,15 @@ class SkillPackageParser:
         package_directory: Path,
         metadata: MosaicSkillMetadata,
     ) -> str | None:
-        """Read the optional Markdown output form.
+        """
+        Read the optional Markdown output form.
 
-        Args:
-            package_directory: Root directory of the skill package.
-            metadata: Validated MOSAIC metadata for the package.
+        :param package_directory: Root directory of the Skill package.
+        :param metadata: Validated MOSAIC metadata for the package.
 
-        Returns:
-            The output-form text, or ``None`` when it is not declared.
+        :return: Output-form text, or ``None`` when it is not declared.
 
-        Raises:
-            ValueError: If the declared file is invalid.
+        :raises ValueError: If the declared file is invalid.
         """
         if metadata.output_form_file is None:
             return None
@@ -386,17 +362,15 @@ class SkillPackageParser:
         package_directory: Path,
         metadata: MosaicSkillMetadata,
     ) -> dict[str, Any] | None:
-        """Read and validate the optional Draft 2020-12 JSON Schema.
+        """
+        Read and validate the optional Draft 2020-12 JSON Schema.
 
-        Args:
-            package_directory: Root directory of the skill package.
-            metadata: Validated MOSAIC metadata for the package.
+        :param package_directory: Root directory of the Skill package.
+        :param metadata: Validated MOSAIC metadata for the package.
 
-        Returns:
-            The JSON Schema object, or ``None`` when it is not declared.
+        :return: JSON Schema object, or ``None`` when it is not declared.
 
-        Raises:
-            ValueError: If JSON or its schema is invalid.
+        :raises ValueError: If JSON or its schema is invalid.
         """
         if metadata.output_schema_file is None:
             return None
@@ -429,18 +403,15 @@ class SkillPackageParser:
         package_directory: Path,
         relative_path: Path,
     ) -> str:
-        """Read a non-empty UTF-8 regular file within a package.
+        """
+        Read a non-empty UTF-8 regular file within a package.
 
-        Args:
-            package_directory: Root directory of the skill package.
-            relative_path: Package-relative path of the required file.
+        :param package_directory: Root directory of the Skill package.
+        :param relative_path: Package-relative path of the required file.
 
-        Returns:
-            Stripped UTF-8 file content.
+        :return: Stripped UTF-8 file content.
 
-        Raises:
-            ValueError: If the file is missing, unsafe, unreadable, empty, or
-                not valid UTF-8.
+        :raises ValueError: If the file is missing, unsafe or unreadable.
         """
         file_path = package_directory / relative_path
         self._validate_contained_path(package_directory, file_path)
@@ -466,14 +437,13 @@ class SkillPackageParser:
         parent_directory: Path,
         candidate_path: Path,
     ) -> None:
-        """Ensure a candidate resolves beneath its expected parent.
+        """
+        Ensure a candidate resolves beneath its expected parent.
 
-        Args:
-            parent_directory: Directory that must contain the candidate.
-            candidate_path: Path being checked.
+        :param parent_directory: Directory that must contain the candidate.
+        :param candidate_path: Path being checked.
 
-        Raises:
-            ValueError: If the candidate escapes its parent.
+        :raises ValueError: If the candidate escapes its parent.
         """
         try:
             candidate_path.resolve().relative_to(
@@ -488,14 +458,12 @@ class SkillPackageParser:
         self,
         package_directory: Path,
     ) -> None:
-        """Reject executable files because MVP skills are declarative only.
+        """
+        Reject executable files because pilot Skills are declarative only.
 
-        Args:
-            package_directory: Root directory of the skill package.
+        :param package_directory: Directory of the Skill package.
 
-        Raises:
-            ValueError: If an executable file exists below the standard
-                ``scripts`` directory.
+        :raises ValueError: If the package contains an executable script.
         """
         scripts_directory = package_directory / 'scripts'
         if not scripts_directory.exists():

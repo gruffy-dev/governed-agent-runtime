@@ -1,5 +1,3 @@
-"""Tests for parsing Agent Skills packages from repository snapshots."""
-
 import json
 import unittest
 from pathlib import Path
@@ -9,10 +7,7 @@ from mosaic.components.skills.skill_package_parser import SkillPackageParser
 
 
 class TestSkillPackageParser(unittest.TestCase):
-    """Verify package construction and repository rejection paths."""
-
     def test_valid_package_builds_immutable_snapshot(self) -> None:
-        """Standard and MOSAIC metadata produce a complete runtime skill."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             package_directory = self._write_package(repository_root)
@@ -70,7 +65,6 @@ class TestSkillPackageParser(unittest.TestCase):
         )
 
     def test_directory_and_frontmatter_names_must_match(self) -> None:
-        """A package cannot masquerade under a different directory name."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             self._write_package(
@@ -85,7 +79,6 @@ class TestSkillPackageParser(unittest.TestCase):
                 )
 
     def test_invalid_json_schema_is_rejected(self) -> None:
-        """Declared output schemas must be valid Draft 2020-12 schemas."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             package_directory = self._write_package(repository_root)
@@ -107,7 +100,6 @@ class TestSkillPackageParser(unittest.TestCase):
                 )
 
     def test_executable_skill_scripts_are_rejected(self) -> None:
-        """MVP skill packages cannot introduce executable code."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             package_directory = self._write_package(repository_root)
@@ -124,7 +116,6 @@ class TestSkillPackageParser(unittest.TestCase):
                 )
 
     def test_flat_skill_package_is_rejected(self) -> None:
-        """Packages must use the domain/function/name hierarchy."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             package_directory = self._write_package(repository_root)
@@ -140,7 +131,6 @@ class TestSkillPackageParser(unittest.TestCase):
                 )
 
     def test_duplicate_skill_names_across_domains_are_rejected(self) -> None:
-        """A snapshot cannot contain the same skill name more than once."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             self._write_package(repository_root)
@@ -156,7 +146,6 @@ class TestSkillPackageParser(unittest.TestCase):
                 )
 
     def test_unpaired_metadata_file_is_rejected(self) -> None:
-        """Category directories cannot masquerade as skill packages."""
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             self._write_package(repository_root)
@@ -184,17 +173,6 @@ class TestSkillPackageParser(unittest.TestCase):
         domain_name: str = 'container-platforms',
         function_name: str = 'diagnostics',
     ) -> Path:
-        """Write a minimal valid package fixture.
-
-        Args:
-            repository_root: Temporary root representing a Git export.
-            directory_name: Package directory name to create.
-            domain_name: Catalogue domain containing the package.
-            function_name: Functional category containing the package.
-
-        Returns:
-            Path of the created package directory.
-        """
         package_directory = (
             repository_root
             / 'skills'
@@ -222,12 +200,6 @@ class TestSkillPackageParser(unittest.TestCase):
         package_directory: Path,
         output_schema_file: str | None = None,
     ) -> None:
-        """Write the MOSAIC metadata fixture.
-
-        Args:
-            package_directory: Package receiving ``mosaic.yaml``.
-            output_schema_file: Optional schema file reference.
-        """
         schema_line = (
             f'output_schema_file: {output_schema_file}\n'
             if output_schema_file is not None

@@ -1,5 +1,3 @@
-"""Immutable snapshot of a validated skill catalogue."""
-
 from datetime import datetime
 from typing import Self
 
@@ -10,8 +8,6 @@ from .skill_catalogue_group import SkillCatalogueGroup
 
 
 class SkillCatalogueSnapshot(BaseModel):
-    """Identify and contain one validated Git commit of skills."""
-
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,

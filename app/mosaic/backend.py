@@ -1,5 +1,3 @@
-"""MOSAIC-owned process boundary around the ADA backend application."""
-
 from collections.abc import Callable
 from typing import Any
 
@@ -12,8 +10,6 @@ from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
 class Backend:
-    """Create and run the ADA application through an owned stable boundary."""
-
     @staticmethod
     def create_application(
         *,
@@ -92,11 +88,10 @@ class Backend:
 
     @staticmethod
     def _register_readiness_endpoint(application: Any) -> None:
-        """Register the internal readiness probe after successful startup.
+        """
+        Register the internal readiness probe after successful startup.
 
-        Args:
-            application: ADA ASGI application exposing FastAPI route
-                registration.
+        :param application: ADA ASGI application exposing route registration.
         """
         application.add_api_route(
             '/ready',
@@ -107,10 +102,10 @@ class Backend:
 
     @staticmethod
     def _readiness() -> dict[str, str]:
-        """Return the readiness state of the successfully created process.
+        """
+        Return the readiness state of the successfully created process.
 
-        Returns:
-            Stable readiness response for the deployment probe.
+        :return: Stable readiness response for the deployment probe.
         """
         return {'status': 'ready'}
 
@@ -120,11 +115,11 @@ class Backend:
         configuration: BackendConfiguration | None = None,
         uvicorn_runner: Callable[..., Any] | None = None,
     ) -> None:
-        """Start the backend using validated deployment configuration.
+        """
+        Start the backend using validated deployment configuration.
 
-        Args:
-            configuration: Optional validated configuration override.
-            uvicorn_runner: Optional server runner used by isolated tests.
+        :param configuration: Optional validated configuration override.
+        :param uvicorn_runner: Optional server runner used by isolated tests.
         """
         if configuration is None:
             configuration = BackendConfiguration()
