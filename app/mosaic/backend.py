@@ -59,7 +59,18 @@ class Backend:
         Backend._register_readiness_endpoint(application)
         if application_configurer is not None:
             application_configurer(application)
-        if pilot_administration_configuration.enabled:
+        from .components.identity.bearer_authentication_middleware import BearerAuthenticationMiddleware
+        from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
+
+        runtime_database = MosaicDatabase(database_configuration)
+        try:
+            application.add_middleware(
+                BearerAuthenticationMiddleware,
+                authenticator=PilotBearerAuthenticator(runtime_database),
+            )
+            if not pilot_administration_configuration.enabled:
+                return application
+
             from .components.identity.pilot_administration_api import PilotAdministrationApi
             from .components.identity.pilot_user_administration_service import PilotUserAdministrationService
 
@@ -67,19 +78,17 @@ class Backend:
                 from .agent import skill_catalogue_snapshot as loaded_snapshot
 
                 skill_catalogue_snapshot = loaded_snapshot
-            administration_database = MosaicDatabase(database_configuration)
-            try:
-                administration_service = PilotUserAdministrationService(
-                    administration_database,
-                    skill_catalogue_snapshot,
-                )
-                PilotAdministrationApi(
-                    pilot_administration_configuration,
-                    administration_service,
-                ).register_routes(application)
-            except Exception:
-                administration_database.dispose()
-                raise
+            administration_service = PilotUserAdministrationService(
+                runtime_database,
+                skill_catalogue_snapshot,
+            )
+            PilotAdministrationApi(
+                pilot_administration_configuration,
+                administration_service,
+            ).register_routes(application)
+        except Exception:
+            runtime_database.dispose()
+            raise
         return application
 
     @staticmethod

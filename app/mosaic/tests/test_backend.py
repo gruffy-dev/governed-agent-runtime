@@ -1,13 +1,16 @@
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from mosaic.backend import Backend
+from mosaic.components.persistence.mosaic_database import MosaicDatabase
+from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.backend_configuration import BackendConfiguration
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
@@ -23,7 +26,12 @@ class TestBackend(unittest.TestCase):
     ) -> None:
         events: list[str] = []
         application = Mock()
-        database = database_type.return_value
+        migration_database = Mock()
+        runtime_database = Mock()
+        database_type.side_effect = [
+            migration_database,
+            runtime_database,
+        ]
         migrator = migrator_type.return_value
         configuration = MosaicDatabaseConfiguration()
 
@@ -45,8 +53,13 @@ class TestBackend(unittest.TestCase):
             events.append('outer_application_configured')
 
         migrator.upgrade.side_effect = upgrade_database
-        database.dispose.side_effect = dispose_database
+        migration_database.dispose.side_effect = dispose_database
         application.add_api_route.side_effect = register_readiness
+        application.add_middleware.side_effect = (
+            lambda *_args, **_kwargs: events.append(
+                'authentication_registered'
+            )
+        )
 
         result = Backend.create_application(
             ada_app_factory=create_ada_application,
@@ -55,8 +68,9 @@ class TestBackend(unittest.TestCase):
         )
 
         self.assertIs(result, application)
-        database_type.assert_called_once_with(configuration)
-        migrator_type.assert_called_once_with(database)
+        self.assertEqual(database_type.call_count, 2)
+        database_type.assert_any_call(configuration)
+        migrator_type.assert_called_once_with(migration_database)
         self.assertEqual(
             events,
             [
@@ -65,8 +79,11 @@ class TestBackend(unittest.TestCase):
                 'ada_app_created',
                 'readiness_registered',
                 'outer_application_configured',
+                'authentication_registered',
             ],
         )
+        migration_database.dispose.assert_called_once_with()
+        runtime_database.dispose.assert_not_called()
         application.add_api_route.assert_called_once_with(
             '/ready',
             Backend._readiness,
@@ -76,6 +93,71 @@ class TestBackend(unittest.TestCase):
 
     def test_readiness_response_is_stable(self) -> None:
         self.assertEqual(Backend._readiness(), {'status': 'ready'})
+
+    def test_persisted_bearer_token_establishes_trusted_context(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            database_configuration = MosaicDatabaseConfiguration(
+                database_path=Path(temporary_directory) / 'mosaic.db'
+            )
+
+            def configure_application(application: FastAPI) -> None:
+                async def protected_route(
+                    request: Request,
+                ) -> dict[str, str]:
+                    return {
+                        'user_id': (
+                            request.state.trusted_user_context.user_id
+                        )
+                    }
+
+                application.add_api_route(
+                    '/protected',
+                    protected_route,
+                    methods=['GET'],
+                )
+
+            application = Backend.create_application(
+                ada_app_factory=FastAPI,
+                application_configurer=configure_application,
+                database_configuration=database_configuration,
+            )
+            database = MosaicDatabase(database_configuration)
+            created_at = datetime.now(UTC)
+            try:
+                with (
+                    database.create_session() as session,
+                    session.begin(),
+                ):
+                    repository = UserAccessRepository(session)
+                    repository.add_user('authenticated-user', created_at)
+                    repository.add_access_token(
+                        '00000000-0000-4000-8000-000000000023',
+                        'authenticated-user',
+                        'persisted-valid-token',
+                        created_at,
+                    )
+
+                with TestClient(application) as client:
+                    missing_response = client.get('/protected')
+                    valid_response = client.get(
+                        '/protected',
+                        headers={
+                            'Authorization': (
+                                'Bearer persisted-valid-token'
+                            )
+                        },
+                    )
+            finally:
+                database.dispose()
+
+        self.assertEqual(missing_response.status_code, 401)
+        self.assertEqual(valid_response.status_code, 200)
+        self.assertEqual(
+            valid_response.json(),
+            {'user_id': 'authenticated-user'},
+        )
 
     @patch('mosaic.backend.MosaicDatabaseMigrator')
     @patch('mosaic.backend.MosaicDatabase')
@@ -154,6 +236,7 @@ class TestBackend(unittest.TestCase):
         api_type.return_value.register_routes.assert_called_once_with(
             application
         )
+        application.add_middleware.assert_called_once()
         administration_database.dispose.assert_not_called()
 
     def test_enabled_pilot_administration_supports_fastapi_application(
@@ -176,11 +259,15 @@ class TestBackend(unittest.TestCase):
                 skill_catalogue_snapshot=Mock(),
             )
             with TestClient(application) as client:
+                readiness_response = client.get('/ready')
+                protected_response = client.get('/run')
                 users_response = client.get('/api/v1/admin/users')
                 skills_response = client.get(
                     '/api/v1/admin/workspaces/pilot-user/skills'
                 )
 
+        self.assertEqual(readiness_response.status_code, 200)
+        self.assertEqual(protected_response.status_code, 401)
         self.assertEqual(users_response.status_code, 403)
         self.assertEqual(skills_response.status_code, 403)
 
