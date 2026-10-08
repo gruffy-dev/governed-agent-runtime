@@ -30,7 +30,7 @@ class TestMosaicDatabaseMigrator(unittest.TestCase):
             finally:
                 database.dispose()
 
-            self.assertEqual(revision, '0002_user_access')
+            self.assertEqual(revision, '0003_workspace_skills')
 
     def test_upgrade_failure_is_propagated(self) -> None:
         with TemporaryDirectory() as temporary_directory:
