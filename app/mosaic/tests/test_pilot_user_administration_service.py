@@ -1,5 +1,6 @@
 import base64
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -12,7 +13,11 @@ from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.components.persistence.workspace_service import WorkspaceService
+from mosaic.models.identity.pilot_workspace_skill_update_request import PilotWorkspaceSkillUpdateRequest
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
+from mosaic.models.skills.skill import Skill
+from mosaic.models.skills.skill_catalogue_group import SkillCatalogueGroup
+from mosaic.models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
 class TestPilotUserAdministrationService(unittest.TestCase):
@@ -140,3 +145,95 @@ class TestPilotUserAdministrationService(unittest.TestCase):
                 credential.plaintext_token.get_secret_value(),
                 'mosaic_r1_synthetic-pilot-token',
             )
+
+    def test_workspace_skill_updates_expand_groups_and_fail_closed(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            database = MosaicDatabase(
+                MosaicDatabaseConfiguration(
+                    database_path=(
+                        Path(temporary_directory) / 'mosaic.db'
+                    )
+                )
+            )
+            service = PilotUserAdministrationService(
+                database,
+                self._create_catalogue_snapshot(),
+            )
+
+            try:
+                MosaicDatabaseMigrator(database).upgrade()
+                service.create_user('workspace-user')
+                dry_run = service.update_workspace_skills(
+                    'workspace-user',
+                    PilotWorkspaceSkillUpdateRequest(
+                        group_ids=('platform/diagnostics',),
+                        dry_run=True,
+                    ),
+                )
+                unchanged = service.get_workspace_skills('workspace-user')
+                applied = service.update_workspace_skills(
+                    'workspace-user',
+                    PilotWorkspaceSkillUpdateRequest(
+                        skill_ids=('summarize-findings',),
+                        group_ids=('platform/diagnostics',),
+                    ),
+                )
+                with self.assertRaises(ValueError):
+                    service.update_workspace_skills(
+                        'workspace-user',
+                        PilotWorkspaceSkillUpdateRequest(
+                            skill_ids=('unknown-skill',),
+                        ),
+                    )
+                with self.assertRaises(ValueError):
+                    service.update_workspace_skills(
+                        'workspace-user',
+                        PilotWorkspaceSkillUpdateRequest(
+                            group_ids=('platform/unknown',),
+                        ),
+                    )
+                after_rejection = service.get_workspace_skills(
+                    'workspace-user'
+                )
+            finally:
+                database.dispose()
+
+        self.assertFalse(dry_run.applied)
+        self.assertEqual(
+            dry_run.skill_ids,
+            ('inspect-platform',),
+        )
+        self.assertEqual(unchanged.skill_ids, ())
+        self.assertEqual(unchanged.version, 1)
+        self.assertTrue(applied.applied)
+        self.assertEqual(
+            applied.skill_ids,
+            ('inspect-platform', 'summarize-findings'),
+        )
+        self.assertEqual(applied.version, 2)
+        self.assertEqual(after_rejection.skill_ids, applied.skill_ids)
+        self.assertEqual(after_rejection.version, applied.version)
+
+    @staticmethod
+    def _create_catalogue_snapshot() -> SkillCatalogueSnapshot:
+        skills = tuple(
+            Skill(
+                name=name,
+                version='1.0.0',
+                kind='procedural',
+                description=f'{name} description.',
+                instruction=f'{name} instruction.',
+            )
+            for name in ('inspect-platform', 'summarize-findings')
+        )
+        return SkillCatalogueSnapshot(
+            commit_sha='a' * 40,
+            loaded_at=datetime.now(UTC),
+            skills=skills,
+            groups=(
+                SkillCatalogueGroup(
+                    group_id='platform/diagnostics',
+                    skill_ids=('inspect-platform',),
+                ),
+            ),
+        )

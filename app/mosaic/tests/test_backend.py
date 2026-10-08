@@ -124,6 +124,7 @@ class TestBackend(unittest.TestCase):
             enabled=True,
             administrator_secret=SecretStr('a' * 32),
         )
+        catalogue_snapshot = Mock()
 
         result = Backend.create_application(
             ada_app_factory=lambda: application,
@@ -131,13 +132,17 @@ class TestBackend(unittest.TestCase):
             pilot_administration_configuration=(
                 administration_configuration
             ),
+            skill_catalogue_snapshot=catalogue_snapshot,
         )
 
         self.assertIs(result, application)
         self.assertEqual(database_type.call_count, 2)
         migrator_type.assert_called_once_with(migration_database)
         migration_database.dispose.assert_called_once_with()
-        service_type.assert_called_once_with(administration_database)
+        service_type.assert_called_once_with(
+            administration_database,
+            catalogue_snapshot,
+        )
         api_type.assert_called_once_with(
             administration_configuration,
             service_type.return_value,

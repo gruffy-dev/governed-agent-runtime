@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from ...models.skills.agent_skill_frontmatter import AgentSkillFrontmatter
 from ...models.skills.mosaic_skill_metadata import MosaicSkillMetadata
 from ...models.skills.skill import Skill
+from ...models.skills.skill_catalogue_group import SkillCatalogueGroup
 from ...models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
@@ -53,12 +54,17 @@ class SkillPackageParser:
             self._parse_package(skills_root, package_directory)
             for package_directory in package_directories
         )
+        groups = self._build_groups(
+            skills_root,
+            package_directories,
+        )
 
         try:
             return SkillCatalogueSnapshot(
                 commit_sha=commit_sha,
                 loaded_at=datetime.now(timezone.utc),
                 skills=skills,
+                groups=groups,
             )
         except ValidationError as error:
             raise ValueError(
@@ -108,6 +114,35 @@ class SkillPackageParser:
                 )
 
         return tuple(package_directories)
+
+    def _build_groups(
+        self,
+        skills_root: Path,
+        package_directories: tuple[Path, ...],
+    ) -> tuple[SkillCatalogueGroup, ...]:
+        """
+        Build current domain and function groups from package hierarchy.
+
+        :param skills_root: Validated root of the Skill catalogue.
+        :param package_directories: Validated atomic package directories.
+
+        :return: Deterministically ordered group-to-Skill expansions.
+        """
+        group_members: dict[str, set[str]] = {}
+        for package_directory in package_directories:
+            domain, function, skill_id = package_directory.relative_to(
+                skills_root
+            ).parts
+            for group_id in (domain, f'{domain}/{function}'):
+                group_members.setdefault(group_id, set()).add(skill_id)
+
+        return tuple(
+            SkillCatalogueGroup(
+                group_id=group_id,
+                skill_ids=tuple(sorted(group_members[group_id])),
+            )
+            for group_id in sorted(group_members)
+        )
 
     def _validate_package_hierarchy(
         self,

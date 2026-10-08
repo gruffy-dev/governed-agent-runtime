@@ -197,3 +197,129 @@ class TestMosaicAdminCli(unittest.TestCase):
             error_output.getvalue(),
             'MOSAIC_PILOT_ADMIN_SECRET is required.\n',
         )
+
+    @patch('mosaic.components.identity.mosaic_admin_cli.HTTPSConnection')
+    def test_show_workspace_skills_calls_protected_endpoint(
+        self,
+        connection_type: Mock,
+    ) -> None:
+        connection = connection_type.return_value
+        response = connection.getresponse.return_value
+        response.status = 200
+        response.read.return_value = b'{"skill_ids": []}'
+        output = StringIO()
+
+        with (
+            patch.dict(
+                'os.environ',
+                {'MOSAIC_PILOT_ADMIN_SECRET': 'a' * 32},
+                clear=True,
+            ),
+            patch('sys.stdout', output),
+        ):
+            exit_status = MosaicAdminCli.run(
+                [
+                    '--api-url',
+                    'https://mosaic.example.com',
+                    'workspaces',
+                    'show-skills',
+                    'pilot-user',
+                ]
+            )
+
+        self.assertEqual(exit_status, 0)
+        self.assertEqual(
+            connection.request.call_args.args[:2],
+            (
+                'GET',
+                '/api/v1/admin/workspaces/pilot-user/skills',
+            ),
+        )
+
+    @patch('mosaic.components.identity.mosaic_admin_cli.HTTPSConnection')
+    def test_set_workspace_skills_sends_repeated_selections(
+        self,
+        connection_type: Mock,
+    ) -> None:
+        connection = connection_type.return_value
+        response = connection.getresponse.return_value
+        response.status = 200
+        response.read.return_value = b'{"applied": false}'
+        output = StringIO()
+
+        with (
+            patch.dict(
+                'os.environ',
+                {'MOSAIC_PILOT_ADMIN_SECRET': 'a' * 32},
+                clear=True,
+            ),
+            patch('sys.stdout', output),
+        ):
+            exit_status = MosaicAdminCli.run(
+                [
+                    '--api-url',
+                    'https://mosaic.example.com',
+                    'workspaces',
+                    'set-skills',
+                    'pilot-user',
+                    '--skill',
+                    'inspect-platform',
+                    '--skill',
+                    'summarize-findings',
+                    '--group',
+                    'platform/diagnostics',
+                    '--dry-run',
+                ]
+            )
+
+        self.assertEqual(exit_status, 0)
+        request_call = connection.request.call_args
+        self.assertEqual(request_call.args[0], 'PUT')
+        self.assertEqual(
+            request_call.args[1],
+            '/api/v1/admin/workspaces/pilot-user/skills',
+        )
+        self.assertEqual(
+            json.loads(request_call.kwargs['body']),
+            {
+                'skill_ids': [
+                    'inspect-platform',
+                    'summarize-findings',
+                ],
+                'group_ids': ['platform/diagnostics'],
+                'clear': False,
+                'dry_run': True,
+            },
+        )
+
+    @patch('mosaic.components.identity.mosaic_admin_cli.HTTPSConnection')
+    def test_set_workspace_skills_requires_explicit_clear(
+        self,
+        connection_type: Mock,
+    ) -> None:
+        error_output = StringIO()
+
+        with (
+            patch.dict(
+                'os.environ',
+                {'MOSAIC_PILOT_ADMIN_SECRET': 'a' * 32},
+                clear=True,
+            ),
+            patch('sys.stderr', error_output),
+        ):
+            exit_status = MosaicAdminCli.run(
+                [
+                    '--api-url',
+                    'https://mosaic.example.com',
+                    'workspaces',
+                    'set-skills',
+                    'pilot-user',
+                ]
+            )
+
+        self.assertEqual(exit_status, 2)
+        self.assertEqual(
+            error_output.getvalue(),
+            '--clear is required for an empty Skill set.\n',
+        )
+        connection_type.assert_not_called()

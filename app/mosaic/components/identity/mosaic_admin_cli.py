@@ -83,6 +83,48 @@ class MosaicAdminCli:
             help='Disable one pilot user and its access tokens.',
         )
         disable_user.add_argument('user_id')
+
+        workspaces = commands.add_parser(
+            'workspaces',
+            help='Inspect or replace pilot workspace Skill assignments.',
+        )
+        workspace_commands = workspaces.add_subparsers(
+            dest='workspace_command',
+            required=True,
+        )
+        show_skills = workspace_commands.add_parser(
+            'show-skills',
+            help='Show one user workspace and its atomic Skill IDs.',
+        )
+        show_skills.add_argument('user_id')
+
+        set_skills = workspace_commands.add_parser(
+            'set-skills',
+            help='Replace one user workspace atomic Skill assignment.',
+        )
+        set_skills.add_argument('user_id')
+        set_skills.add_argument(
+            '--skill',
+            action='append',
+            default=[],
+            help='Atomic approved Skill ID; may be repeated.',
+        )
+        set_skills.add_argument(
+            '--group',
+            action='append',
+            default=[],
+            help='Current catalogue group ID; may be repeated.',
+        )
+        set_skills.add_argument(
+            '--clear',
+            action='store_true',
+            help='Explicitly replace the workspace with an empty set.',
+        )
+        set_skills.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Show group expansion without changing the workspace.',
+        )
         return parser
 
     @staticmethod
@@ -128,6 +170,47 @@ class MosaicAdminCli:
                 '/api/v1/admin/users/'
                 f'{quote(parsed_arguments.user_id, safe="")}/disable',
                 None,
+            )
+        if (
+            parsed_arguments.command == 'workspaces'
+            and parsed_arguments.workspace_command == 'show-skills'
+        ):
+            return MosaicAdminCli._send_request(
+                api_url,
+                administrator_secret,
+                'GET',
+                '/api/v1/admin/workspaces/'
+                f'{quote(parsed_arguments.user_id, safe="")}/skills',
+                None,
+            )
+        if (
+            parsed_arguments.command == 'workspaces'
+            and parsed_arguments.workspace_command == 'set-skills'
+        ):
+            if parsed_arguments.clear and (
+                parsed_arguments.skill or parsed_arguments.group
+            ):
+                raise ValueError(
+                    '--clear cannot be combined with --skill or --group.'
+                )
+            if not parsed_arguments.clear and not (
+                parsed_arguments.skill or parsed_arguments.group
+            ):
+                raise ValueError(
+                    '--clear is required for an empty Skill set.'
+                )
+            return MosaicAdminCli._send_request(
+                api_url,
+                administrator_secret,
+                'PUT',
+                '/api/v1/admin/workspaces/'
+                f'{quote(parsed_arguments.user_id, safe="")}/skills',
+                {
+                    'skill_ids': parsed_arguments.skill,
+                    'group_ids': parsed_arguments.group,
+                    'clear': parsed_arguments.clear,
+                    'dry_run': parsed_arguments.dry_run,
+                },
             )
         raise ValueError('Unsupported administrator command.')
 

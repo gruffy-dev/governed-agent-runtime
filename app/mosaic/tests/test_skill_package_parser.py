@@ -47,6 +47,28 @@ class TestSkillPackageParser(unittest.TestCase):
         self.assertEqual(snapshot.skills[0].version, '1.0.0')
         self.assertEqual(snapshot.skills[0].output_schema['type'], 'object')
 
+    def test_catalogue_builds_current_hierarchy_groups(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            self._write_package(repository_root)
+
+            snapshot = SkillPackageParser().parse_catalogue(
+                repository_root,
+                '1' * 40,
+            )
+
+        self.assertEqual(
+            tuple(group.group_id for group in snapshot.groups),
+            (
+                'container-platforms',
+                'container-platforms/diagnostics',
+            ),
+        )
+        self.assertEqual(
+            snapshot.groups[0].skill_ids,
+            ('investigate-platform',),
+        )
+
     def test_directory_and_frontmatter_names_must_match(self) -> None:
         """A package cannot masquerade under a different directory name."""
         with TemporaryDirectory() as temporary_directory:

@@ -1,5 +1,6 @@
 import base64
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
@@ -15,6 +16,9 @@ from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabas
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
+from mosaic.models.skills.skill import Skill
+from mosaic.models.skills.skill_catalogue_group import SkillCatalogueGroup
+from mosaic.models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
 class TestPilotAdministrationApi(unittest.TestCase):
@@ -49,7 +53,10 @@ class TestPilotAdministrationApi(unittest.TestCase):
                     enabled=True,
                     administrator_secret=SecretStr(secret),
                 ),
-                PilotUserAdministrationService(database),
+                PilotUserAdministrationService(
+                    database,
+                    self._create_catalogue_snapshot(),
+                ),
             ).register_routes(application)
 
             try:
@@ -67,6 +74,34 @@ class TestPilotAdministrationApi(unittest.TestCase):
                     listed = client.get(
                         '/api/v1/admin/users',
                         headers={'Authorization': f'Bearer {secret}'},
+                    )
+                    workspace_before = client.get(
+                        '/api/v1/admin/workspaces/pilot-user/skills',
+                        headers={'Authorization': f'Bearer {secret}'},
+                    )
+                    dry_run = client.put(
+                        '/api/v1/admin/workspaces/pilot-user/skills',
+                        headers={'Authorization': f'Bearer {secret}'},
+                        json={
+                            'group_ids': ['platform/diagnostics'],
+                            'dry_run': True,
+                        },
+                    )
+                    applied = client.put(
+                        '/api/v1/admin/workspaces/pilot-user/skills',
+                        headers={'Authorization': f'Bearer {secret}'},
+                        json={
+                            'group_ids': ['platform/diagnostics'],
+                        },
+                    )
+                    workspace_after = client.get(
+                        '/api/v1/admin/workspaces/pilot-user/skills',
+                        headers={'Authorization': f'Bearer {secret}'},
+                    )
+                    cleared = client.put(
+                        '/api/v1/admin/workspaces/pilot-user/skills',
+                        headers={'Authorization': f'Bearer {secret}'},
+                        json={'clear': True},
                     )
                     disabled = client.post(
                         '/api/v1/admin/users/pilot-user/disable',
@@ -100,6 +135,19 @@ class TestPilotAdministrationApi(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(len(listed.json()), 1)
         self.assertNotIn('token', listed.text.lower())
+        self.assertEqual(workspace_before.json()['skill_ids'], [])
+        self.assertFalse(dry_run.json()['applied'])
+        self.assertEqual(
+            dry_run.json()['skill_ids'],
+            ['inspect-platform'],
+        )
+        self.assertTrue(applied.json()['applied'])
+        self.assertEqual(
+            workspace_after.json()['skill_ids'],
+            ['inspect-platform'],
+        )
+        self.assertTrue(cleared.json()['applied'])
+        self.assertEqual(cleared.json()['skill_ids'], [])
         self.assertEqual(disabled.status_code, 204)
         self.assertIsNone(resolved_user)
         self.assertNotIn('/api/v1/admin/users', openapi.json()['paths'])
@@ -144,3 +192,24 @@ class TestPilotAdministrationApi(unittest.TestCase):
 
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(duplicate.json(), {'detail': 'Conflict'})
+
+    @staticmethod
+    def _create_catalogue_snapshot() -> SkillCatalogueSnapshot:
+        skill = Skill(
+            name='inspect-platform',
+            version='1.0.0',
+            kind='procedural',
+            description='Inspect an approved platform.',
+            instruction='Inspect the approved platform safely.',
+        )
+        return SkillCatalogueSnapshot(
+            commit_sha='a' * 40,
+            loaded_at=datetime.now(UTC),
+            skills=(skill,),
+            groups=(
+                SkillCatalogueGroup(
+                    group_id='platform/diagnostics',
+                    skill_ids=('inspect-platform',),
+                ),
+            ),
+        )

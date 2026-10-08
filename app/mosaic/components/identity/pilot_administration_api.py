@@ -5,10 +5,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Response
 from sqlalchemy.exc import IntegrityError
 
 from .pilot_user_administration_service import PilotUserAdministrationService
+from ..persistence.stale_workspace_version_error import StaleWorkspaceVersionError
 from ...models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from ...models.identity.pilot_user_creation_request import PilotUserCreationRequest
 from ...models.identity.pilot_user_provisioning_response import PilotUserProvisioningResponse
 from ...models.identity.pilot_user_summary import PilotUserSummary
+from ...models.identity.pilot_workspace_skill_update_request import PilotWorkspaceSkillUpdateRequest
+from ...models.identity.pilot_workspace_skill_update_result import PilotWorkspaceSkillUpdateResult
+from ...models.workspace_skill_set import WorkspaceSkillSet
 
 
 class PilotAdministrationApi:
@@ -59,6 +63,20 @@ class PilotAdministrationApi:
             self.disable_user,
             methods=['POST'],
             status_code=204,
+            include_in_schema=False,
+        )
+        router.add_api_route(
+            '/workspaces/{user_id}/skills',
+            self.show_workspace_skills,
+            methods=['GET'],
+            response_model=WorkspaceSkillSet,
+            include_in_schema=False,
+        )
+        router.add_api_route(
+            '/workspaces/{user_id}/skills',
+            self.set_workspace_skills,
+            methods=['PUT'],
+            response_model=PilotWorkspaceSkillUpdateResult,
             include_in_schema=False,
         )
         application.include_router(router)
@@ -130,6 +148,74 @@ class PilotAdministrationApi:
                 detail='Not found',
             )
         return Response(status_code=204)
+
+    def show_workspace_skills(
+        self,
+        user_id: Annotated[
+            str,
+            Path(
+                min_length=1,
+                max_length=255,
+                pattern=r'^[A-Za-z0-9][A-Za-z0-9._-]*$',
+            ),
+        ],
+    ) -> WorkspaceSkillSet:
+        """
+        Return one pilot user's current atomic workspace Skill assignment.
+
+        :param user_id: Immutable identifier of the workspace owner.
+
+        :return: Current versioned workspace Skill set.
+
+        :raises HTTPException: If the workspace does not exist.
+        """
+        workspace = self._service.get_workspace_skills(user_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail='Not found')
+        return workspace
+
+    def set_workspace_skills(
+        self,
+        user_id: Annotated[
+            str,
+            Path(
+                min_length=1,
+                max_length=255,
+                pattern=r'^[A-Za-z0-9][A-Za-z0-9._-]*$',
+            ),
+        ],
+        request: PilotWorkspaceSkillUpdateRequest,
+    ) -> PilotWorkspaceSkillUpdateResult:
+        """
+        Resolve and optionally apply one complete atomic Skill assignment.
+
+        :param user_id: Immutable identifier of the workspace owner.
+        :param request: Skills, groups, clear and dry-run selection.
+
+        :return: Expanded atomic Skill assignment and application state.
+
+        :raises HTTPException: If validation or workspace update fails.
+        """
+        try:
+            return self._service.update_workspace_skills(
+                user_id,
+                request,
+            )
+        except LookupError as error:
+            raise HTTPException(
+                status_code=404,
+                detail='Not found',
+            ) from error
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400,
+                detail='Invalid Skill selection',
+            ) from error
+        except StaleWorkspaceVersionError as error:
+            raise HTTPException(
+                status_code=409,
+                detail='Conflict',
+            ) from error
 
     def _authenticate(
         self,

@@ -8,6 +8,7 @@ from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigra
 from .models.backend_configuration import BackendConfiguration
 from .models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
+from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
 
 class Backend:
@@ -22,6 +23,7 @@ class Backend:
         pilot_administration_configuration: (
             PilotAdministrationConfiguration | None
         ) = None,
+        skill_catalogue_snapshot: SkillCatalogueSnapshot | None = None,
     ) -> Any:
         """
         Upgrade storage before creating and configuring the ADA application.
@@ -34,6 +36,7 @@ class Backend:
         :param database_configuration: Optional MOSAIC database configuration.
         :param pilot_administration_configuration: Optional temporary pilot
             administration configuration.
+        :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
 
         :return: Configured ADA ASGI application.
 
@@ -64,10 +67,15 @@ class Backend:
             from .components.identity.pilot_administration_api import PilotAdministrationApi
             from .components.identity.pilot_user_administration_service import PilotUserAdministrationService
 
+            if skill_catalogue_snapshot is None:
+                from .agent import skill_catalogue_snapshot as loaded_snapshot
+
+                skill_catalogue_snapshot = loaded_snapshot
             administration_database = MosaicDatabase(database_configuration)
             try:
                 administration_service = PilotUserAdministrationService(
-                    administration_database
+                    administration_database,
+                    skill_catalogue_snapshot,
                 )
                 PilotAdministrationApi(
                     pilot_administration_configuration,
