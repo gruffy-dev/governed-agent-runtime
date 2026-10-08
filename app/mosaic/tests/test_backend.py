@@ -1,8 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from pydantic import SecretStr
+
 from mosaic.backend import Backend
 from mosaic.models.backend_configuration import BackendConfiguration
+from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
 
 
@@ -91,6 +94,62 @@ class TestBackend(unittest.TestCase):
 
         ada_app_factory.assert_not_called()
         database.dispose.assert_called_once_with()
+
+    @patch(
+        'mosaic.components.identity.pilot_administration_api.'
+        'PilotAdministrationApi'
+    )
+    @patch(
+        'mosaic.components.identity.pilot_user_administration_service.'
+        'PilotUserAdministrationService'
+    )
+    @patch('mosaic.backend.MosaicDatabaseMigrator')
+    @patch('mosaic.backend.MosaicDatabase')
+    def test_enabled_pilot_administration_is_registered(
+        self,
+        database_type: Mock,
+        migrator_type: Mock,
+        service_type: Mock,
+        api_type: Mock,
+    ) -> None:
+        application = Mock()
+        migration_database = Mock()
+        administration_database = Mock()
+        database_type.side_effect = [
+            migration_database,
+            administration_database,
+        ]
+        database_configuration = MosaicDatabaseConfiguration()
+        administration_configuration = PilotAdministrationConfiguration(
+            enabled=True,
+            administrator_secret=SecretStr('a' * 32),
+        )
+
+        result = Backend.create_application(
+            ada_app_factory=lambda: application,
+            database_configuration=database_configuration,
+            pilot_administration_configuration=(
+                administration_configuration
+            ),
+        )
+
+        self.assertIs(result, application)
+        self.assertEqual(database_type.call_count, 2)
+        migrator_type.assert_called_once_with(migration_database)
+        migration_database.dispose.assert_called_once_with()
+        service_type.assert_called_once_with(administration_database)
+        api_type.assert_called_once_with(
+            administration_configuration,
+            service_type.return_value,
+        )
+        api_type.return_value.register_routes.assert_called_once_with(
+            application
+        )
+        application.add_event_handler.assert_called_once_with(
+            'shutdown',
+            administration_database.dispose,
+        )
+        administration_database.dispose.assert_not_called()
 
     def test_startup_uses_validated_configuration(self) -> None:
         runner = Mock()

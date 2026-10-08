@@ -43,8 +43,10 @@ class TestPilotUserAdministrationService(unittest.TestCase):
             finally:
                 database.dispose()
 
-            padded_token = plaintext_token + '=' * (
-                -len(plaintext_token) % 4
+            self.assertTrue(plaintext_token.startswith('mosaic_r1_'))
+            encoded_random_bytes = plaintext_token.removeprefix('mosaic_r1_')
+            padded_token = encoded_random_bytes + '=' * (
+                -len(encoded_random_bytes) % 4
             )
             random_bytes = base64.urlsafe_b64decode(padded_token)
             self.assertEqual(len(random_bytes), 32)
@@ -136,5 +138,5 @@ class TestPilotUserAdministrationService(unittest.TestCase):
             token_generator.assert_called_once_with(32)
             self.assertEqual(
                 credential.plaintext_token.get_secret_value(),
-                'synthetic-pilot-token',
+                'mosaic_r1_synthetic-pilot-token',
             )

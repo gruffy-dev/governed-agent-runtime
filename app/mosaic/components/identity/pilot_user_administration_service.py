@@ -39,7 +39,7 @@ class PilotUserAdministrationService:
             user_repository = UserAccessRepository(session)
             workspace_service = WorkspaceService(session)
             user_repository.add_user(user_id, created_at)
-            plaintext_token = token_urlsafe(32)
+            plaintext_token = f'mosaic_r1_{token_urlsafe(32)}'
             token_id = str(uuid4())
             user_repository.add_access_token(
                 token_id,
