@@ -16,6 +16,8 @@ from .models.identity.pilot_authentication_configuration import PilotAuthenticat
 from .models.identity.trusted_request_configuration import TrustedRequestConfiguration
 from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
 from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
+from .components.identity.trusted_api_boundary import TrustedApiBoundary
+from .components.identity.trusted_request_context_dependency import TrustedRequestContextDependency
 
 
 class Backend:
@@ -40,6 +42,9 @@ class Backend:
 
         Imports of the opinionated framework remain lazy so unit tests and
         tooling can inspect MOSAIC without requiring the target ADA runtime.
+        Public wrapper routes must use the backend-owned dependency exposed as
+        application.state.trusted_request_context_dependency. Verify the route
+        graph after composition and again before starting private ADA services.
 
         :param ada_app_factory: Optional ADA factory used by isolated tests.
         :param application_configurer: Optional outer-boundary configurator.
@@ -83,6 +88,10 @@ class Backend:
             private_application, ada_adapter_configuration
         )
         runtime_database = MosaicDatabase(database_configuration)
+        context_dependency = TrustedRequestContextDependency(
+            trusted_request_configuration
+        )
+        identity_boundary = TrustedApiBoundary(context_dependency)
 
         @asynccontextmanager
         async def lifespan(public_application: FastAPI) -> AsyncIterator[None]:
@@ -94,6 +103,7 @@ class Backend:
             :return: Context governing private startup, shutdown and database cleanup.
             """
             try:
+                identity_boundary.validate_routes(public_application)
                 async with lifecycle.running():
                     public_application.state.ada_transport = AdaAsgiTransport(
                         private_application,
@@ -110,6 +120,7 @@ class Backend:
         application = FastAPI(
             lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
         )
+        application.state.trusted_request_context_dependency = context_dependency
         Backend._register_readiness_endpoint(application)
         application.add_api_route(
             '/health', Backend._health, methods=['GET'], include_in_schema=False
@@ -118,7 +129,6 @@ class Backend:
         from .components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
         from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
         from .components.identity.authentication_failure_handler import AuthenticationFailureHandler
-        from .components.identity.trusted_request_context_dependency import TrustedRequestContextDependency
         from .components.api.conversation_api_contract import ConversationApiContract
         from .components.api.conversation_api_documentation import ConversationApiDocumentation
 
@@ -138,9 +148,10 @@ class Backend:
             ).register_routes(application)
             ConversationApiDocumentation(
                 ConversationApiContract(pilot_authentication_configuration),
-                TrustedRequestContextDependency(trusted_request_configuration),
+                context_dependency,
             ).register_routes(application)
             if not pilot_administration_configuration.enabled:
+                identity_boundary.validate_routes(application)
                 return application
 
             from .components.identity.pilot_administration_api import PilotAdministrationApi
@@ -158,6 +169,7 @@ class Backend:
                 pilot_administration_configuration,
                 administration_service,
             ).register_routes(application)
+            identity_boundary.validate_routes(application)
         except Exception:
             runtime_database.dispose()
             raise

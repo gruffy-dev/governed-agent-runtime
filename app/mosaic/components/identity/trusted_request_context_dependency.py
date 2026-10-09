@@ -1,6 +1,7 @@
 from fastapi import Request
 
 from .authentication_error import AuthenticationError
+from .trusted_identity_audit import TrustedIdentityAudit
 from ...models.identity.trusted_request_configuration import TrustedRequestConfiguration
 from ...models.identity.trusted_request_context import TrustedRequestContext
 from ...models.identity.trusted_user_context import TrustedUserContext
@@ -14,6 +15,7 @@ class TrustedRequestContextDependency:
         :param configuration: Application identity owned by the backend.
         """
         self._configuration = configuration
+        self._audit = TrustedIdentityAudit()
 
     async def __call__(self, request: Request) -> TrustedRequestContext:
         """
@@ -22,6 +24,7 @@ class TrustedRequestContextDependency:
         Caller-supplied application, user, workspace and ownership fields do
         not participate in identity resolution. Workspace services must use
         the returned user identifier to resolve ownership server-side.
+        Record only the derived identity through the dedicated audit boundary.
 
         :param request: Request carrying middleware-validated user context.
 
@@ -33,7 +36,9 @@ class TrustedRequestContextDependency:
         user_context = getattr(request.state, 'trusted_user_context', None)
         if not isinstance(user_context, TrustedUserContext):
             raise AuthenticationError()
-        return TrustedRequestContext(
+        context = TrustedRequestContext(
             app_name=self._configuration.app_name,
             user_id=user_context.user_id,
         )
+        self._audit.resolved(context)
+        return context

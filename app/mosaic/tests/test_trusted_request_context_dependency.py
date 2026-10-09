@@ -57,7 +57,10 @@ class TestTrustedRequestContextDependency(unittest.TestCase):
             'owner_id': 'claimed-owner',
         }
 
-        with TestClient(application) as client:
+        with (
+            TestClient(application) as client,
+            self.assertLogs('mosaic.identity', level='INFO') as audit,
+        ):
             response = client.post(
                 '/api/v1/identity/another-user',
                 params=claims,
@@ -79,6 +82,18 @@ class TestTrustedRequestContextDependency(unittest.TestCase):
                 'user_id': 'authenticated-user',
             },
         )
+        self.assertEqual(len(audit.records), 1)
+        self.assertEqual(audit.records[0].user_id, 'authenticated-user')
+        self.assertEqual(audit.records[0].app_name, 'configured-application')
+        self.assertEqual(audit.records[0].mosaic_event, 'trusted_identity_resolved')
+        logged = '\n'.join(audit.output)
+        for untrusted_value in (
+            'synthetic-test-token',
+            'claimed-user',
+            'header-user',
+            'claimed-workspace',
+        ):
+            self.assertNotIn(untrusted_value, logged)
 
     def test_dependency_rejects_missing_context_without_middleware(
         self,

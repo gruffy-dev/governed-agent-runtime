@@ -22,6 +22,65 @@ from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfigurat
 class TestBackend(unittest.TestCase):
     @patch('mosaic.backend.MosaicDatabaseMigrator')
     @patch('mosaic.backend.MosaicDatabase')
+    def test_unchecked_public_wrapper_fails_composition_and_disposes_database(
+        self,
+        database_type: Mock,
+        migrator_type: Mock,
+    ) -> None:
+        migration_database = Mock()
+        runtime_database = Mock()
+        database_type.side_effect = [migration_database, runtime_database]
+
+        def configure(application: FastAPI) -> None:
+            async def unchecked() -> dict[str, str]:
+                return {}
+
+            application.add_api_route('/api/v1/unchecked', unchecked)
+
+        with self.assertRaisesRegex(RuntimeError, 'trusted identity dependency'):
+            Backend.create_application(
+                ada_app_factory=FastAPI,
+                application_configurer=configure,
+                pilot_administration_configuration=PilotAdministrationConfiguration(
+                    enabled=False
+                ),
+            )
+        runtime_database.dispose.assert_called_once_with()
+
+    def test_routes_added_after_composition_are_checked_before_ada_startup(
+        self,
+    ) -> None:
+        started: list[bool] = []
+
+        @asynccontextmanager
+        async def private_lifespan(application: FastAPI) -> AsyncIterator[None]:
+            started.append(True)
+            yield
+
+        with TemporaryDirectory() as directory:
+            application = Backend.create_application(
+                ada_app_factory=lambda: FastAPI(lifespan=private_lifespan),
+                database_configuration=MosaicDatabaseConfiguration(
+                    database_path=Path(directory) / 'mosaic.db'
+                ),
+                pilot_administration_configuration=PilotAdministrationConfiguration(
+                    enabled=False
+                ),
+            )
+
+            async def unchecked() -> dict[str, str]:
+                return {}
+
+            application.add_api_route('/api/v1/unchecked', unchecked)
+            with (
+                self.assertRaisesRegex(RuntimeError, 'trusted identity dependency'),
+                TestClient(application),
+            ):
+                self.fail('Unchecked wrapper must prevent startup.')
+        self.assertEqual(started, [])
+
+    @patch('mosaic.backend.MosaicDatabaseMigrator')
+    @patch('mosaic.backend.MosaicDatabase')
     def test_migration_precedes_ada_app_creation_and_configuration(
         self,
         database_type: Mock,
