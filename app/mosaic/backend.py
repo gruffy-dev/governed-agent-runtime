@@ -1,9 +1,16 @@
 from collections.abc import Callable
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
+from fastapi import FastAPI
+
+from .components.ada.ada_application_lifecycle import AdaApplicationLifecycle
+from .components.ada.ada_asgi_transport import AdaAsgiTransport
 from .components.persistence.mosaic_database import MosaicDatabase
 from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from .models.backend_configuration import BackendConfiguration
+from .models.ada.ada_application_adapter_configuration import AdaApplicationAdapterConfiguration
 from .models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from .models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from .models.identity.trusted_request_configuration import TrustedRequestConfiguration
@@ -26,9 +33,10 @@ class Backend:
         ) = None,
         trusted_request_configuration: TrustedRequestConfiguration | None = None,
         skill_catalogue_snapshot: SkillCatalogueSnapshot | None = None,
+        ada_adapter_configuration: AdaApplicationAdapterConfiguration | None = None,
     ) -> Any:
         """
-        Upgrade storage before creating and configuring the ADA application.
+        Upgrade storage and create the public MOSAIC application around private ADA.
 
         Imports of the opinionated framework remain lazy so unit tests and
         tooling can inspect MOSAIC without requiring the target ADA runtime.
@@ -43,21 +51,18 @@ class Backend:
         :param trusted_request_configuration: Server-owned application identity
             used by public API dependencies.
         :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
+        :param ada_adapter_configuration: Private ASGI lifecycle and transport bounds.
 
-        :return: Configured ADA ASGI application.
+        :return: Public MOSAIC app; generated ADA routes are not mounted.
 
         :raises Exception: If storage, ADA or route configuration fails.
         """
         if database_configuration is None:
             database_configuration = MosaicDatabaseConfiguration()
         if pilot_authentication_configuration is None:
-            pilot_authentication_configuration = (
-                PilotAuthenticationConfiguration()
-            )
+            pilot_authentication_configuration = PilotAuthenticationConfiguration()
         if pilot_administration_configuration is None:
-            pilot_administration_configuration = (
-                PilotAdministrationConfiguration()
-            )
+            pilot_administration_configuration = PilotAdministrationConfiguration()
         if trusted_request_configuration is None:
             trusted_request_configuration = TrustedRequestConfiguration()
         database = MosaicDatabase(database_configuration)
@@ -71,10 +76,44 @@ class Backend:
 
             ada_app_factory = create_app
 
-        application = ada_app_factory()
+        private_application = ada_app_factory()
+        if ada_adapter_configuration is None:
+            ada_adapter_configuration = AdaApplicationAdapterConfiguration()
+        lifecycle = AdaApplicationLifecycle(
+            private_application, ada_adapter_configuration
+        )
+        runtime_database = MosaicDatabase(database_configuration)
+
+        @asynccontextmanager
+        async def lifespan(public_application: FastAPI) -> AsyncIterator[None]:
+            """
+            Keep ADA infrastructure running for the public application lifetime.
+
+            :param public_application: Public app receiving server-owned transport state.
+
+            :return: Context governing private startup, shutdown and database cleanup.
+            """
+            try:
+                async with lifecycle.running():
+                    public_application.state.ada_transport = AdaAsgiTransport(
+                        private_application,
+                        ada_adapter_configuration,
+                        lifespan_state=lifecycle.state,
+                    )
+                    try:
+                        yield
+                    finally:
+                        del public_application.state.ada_transport
+            finally:
+                runtime_database.dispose()
+
+        application = FastAPI(
+            lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
+        )
         Backend._register_readiness_endpoint(application)
-        if application_configurer is not None:
-            application_configurer(application)
+        application.add_api_route(
+            '/health', Backend._health, methods=['GET'], include_in_schema=False
+        )
         from .components.identity.pilot_authentication_api import PilotAuthenticationApi
         from .components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
         from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
@@ -83,8 +122,9 @@ class Backend:
         from .components.api.conversation_api_contract import ConversationApiContract
         from .components.api.conversation_api_documentation import ConversationApiDocumentation
 
-        runtime_database = MosaicDatabase(database_configuration)
         try:
+            if application_configurer is not None:
+                application_configurer(application)
             AuthenticationFailureHandler().register(application)
             authenticator = PilotBearerAuthenticator(runtime_database)
             application.add_middleware(
@@ -124,11 +164,20 @@ class Backend:
         return application
 
     @staticmethod
+    def _health() -> dict[str, str]:
+        """
+        Report public application liveness without querying private session data.
+
+        :return: Stable liveness response.
+        """
+        return {'status': 'ok'}
+
+    @staticmethod
     def _register_readiness_endpoint(application: Any) -> None:
         """
         Register the internal readiness probe after successful startup.
 
-        :param application: ADA ASGI application exposing route registration.
+        :param application: Public MOSAIC application exposing route registration.
         """
         application.add_api_route(
             '/ready',

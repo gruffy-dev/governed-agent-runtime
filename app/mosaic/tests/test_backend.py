@@ -1,4 +1,6 @@
 import unittest
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -46,21 +48,13 @@ class TestBackend(unittest.TestCase):
             events.append('ada_app_created')
             return application
 
-        def register_readiness(*_args: object, **_kwargs: object) -> None:
-            events.append('readiness_registered')
-
         def configure_application(created_application: object) -> None:
-            self.assertIs(created_application, application)
+            self.assertIsInstance(created_application, FastAPI)
+            self.assertIsNot(created_application, application)
             events.append('outer_application_configured')
 
         migrator.upgrade.side_effect = upgrade_database
         migration_database.dispose.side_effect = dispose_database
-        application.add_api_route.side_effect = register_readiness
-        application.add_middleware.side_effect = (
-            lambda *_args, **_kwargs: events.append(
-                'authentication_registered'
-            )
-        )
 
         result = Backend.create_application(
             ada_app_factory=create_ada_application,
@@ -68,7 +62,7 @@ class TestBackend(unittest.TestCase):
             database_configuration=configuration,
         )
 
-        self.assertIs(result, application)
+        self.assertIsNot(result, application)
         self.assertEqual(database_type.call_count, 2)
         database_type.assert_any_call(configuration)
         migrator_type.assert_called_once_with(migration_database)
@@ -78,18 +72,18 @@ class TestBackend(unittest.TestCase):
                 'database_upgraded',
                 'database_disposed',
                 'ada_app_created',
-                'readiness_registered',
                 'outer_application_configured',
-                'authentication_registered',
             ],
         )
         migration_database.dispose.assert_called_once_with()
         runtime_database.dispose.assert_not_called()
-        application.add_api_route.assert_called_once_with(
-            '/ready',
-            Backend._readiness,
-            methods=['GET'],
-            include_in_schema=False,
+        application.add_api_route.assert_not_called()
+        application.add_middleware.assert_not_called()
+        self.assertIn(
+            '/ready', [getattr(route, 'path', None) for route in result.routes]
+        )
+        self.assertIn(
+            '/health', [getattr(route, 'path', None) for route in result.routes]
         )
 
     def test_readiness_response_is_stable(self) -> None:
@@ -115,11 +109,7 @@ class TestBackend(unittest.TestCase):
                 async def protected_route(
                     request: Request,
                 ) -> dict[str, str]:
-                    return {
-                        'user_id': (
-                            request.state.trusted_user_context.user_id
-                        )
-                    }
+                    return {'user_id': (request.state.trusted_user_context.user_id)}
 
                 application.add_api_route(
                     '/protected',
@@ -162,11 +152,7 @@ class TestBackend(unittest.TestCase):
                     missing_response = client.get('/protected')
                     valid_response = client.get(
                         '/protected',
-                        headers={
-                            'Authorization': (
-                                'Bearer persisted-valid-token'
-                            )
-                        },
+                        headers={'Authorization': ('Bearer persisted-valid-token')},
                     )
                     sign_in_response = client.post(
                         '/api/v1/auth/token',
@@ -183,9 +169,7 @@ class TestBackend(unittest.TestCase):
                             created_at,
                         )
                     disabled_cookie_response = client.get('/protected')
-                    logout_response = client.post(
-                        '/api/v1/auth/logout'
-                    )
+                    logout_response = client.post('/api/v1/auth/logout')
                     after_logout_response = client.get('/protected')
             finally:
                 database.dispose()
@@ -244,10 +228,7 @@ class TestBackend(unittest.TestCase):
         ada_app_factory.assert_not_called()
         database.dispose.assert_called_once_with()
 
-    @patch(
-        'mosaic.components.identity.pilot_administration_api.'
-        'PilotAdministrationApi'
-    )
+    @patch('mosaic.components.identity.pilot_administration_api.PilotAdministrationApi')
     @patch(
         'mosaic.components.identity.pilot_user_administration_service.'
         'PilotUserAdministrationService'
@@ -278,13 +259,11 @@ class TestBackend(unittest.TestCase):
         result = Backend.create_application(
             ada_app_factory=lambda: application,
             database_configuration=database_configuration,
-            pilot_administration_configuration=(
-                administration_configuration
-            ),
+            pilot_administration_configuration=(administration_configuration),
             skill_catalogue_snapshot=catalogue_snapshot,
         )
 
-        self.assertIs(result, application)
+        self.assertIsNot(result, application)
         self.assertEqual(database_type.call_count, 2)
         migrator_type.assert_called_once_with(migration_database)
         migration_database.dispose.assert_called_once_with()
@@ -296,11 +275,81 @@ class TestBackend(unittest.TestCase):
             administration_configuration,
             service_type.return_value,
         )
-        api_type.return_value.register_routes.assert_called_once_with(
-            application
-        )
-        application.add_middleware.assert_called_once()
+        api_type.return_value.register_routes.assert_called_once_with(result)
         administration_database.dispose.assert_not_called()
+
+    @patch('mosaic.backend.MosaicDatabaseMigrator')
+    @patch('mosaic.backend.MosaicDatabase')
+    def test_private_routes_are_unmounted_and_lifecycle_owns_resources(
+        self,
+        database_type: Mock,
+        migrator_type: Mock,
+    ) -> None:
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            events.append('startup')
+            try:
+                yield
+            finally:
+                events.append('shutdown')
+
+        private_application = FastAPI(lifespan=lifespan)
+
+        @private_application.get('/apps/synthetic/users/another-user/sessions')
+        async def sessions() -> list[object]:
+            return []
+
+        application = Backend.create_application(
+            ada_app_factory=lambda: private_application
+        )
+        with patch(
+            'mosaic.components.identity.pilot_bearer_authenticator.PilotBearerAuthenticator.authenticate',
+        ) as authenticate:
+            from mosaic.models.identity.trusted_user_context import TrustedUserContext
+
+            authenticate.return_value = TrustedUserContext(user_id='synthetic-user')
+            with TestClient(application) as client:
+                self.assertEqual(events, ['startup'])
+                self.assertTrue(hasattr(application.state, 'ada_transport'))
+                self.assertEqual(client.get('/health').json(), {'status': 'ok'})
+                self.assertEqual(client.get('/ready').json(), {'status': 'ready'})
+                for path in (
+                    '/apps/synthetic/users/another-user/sessions',
+                    '/docs',
+                    '/openapi.json',
+                    '/run_sse',
+                ):
+                    response = client.get(
+                        path, headers={'Authorization': 'Bearer synthetic-token'}
+                    )
+                    self.assertEqual(response.status_code, 404)
+        self.assertEqual(events, ['startup', 'shutdown'])
+        self.assertFalse(hasattr(application.state, 'ada_transport'))
+        self.assertEqual(database_type.return_value.dispose.call_count, 2)
+
+    @patch('mosaic.backend.MosaicDatabaseMigrator')
+    @patch('mosaic.backend.MosaicDatabase')
+    def test_private_startup_failure_closes_runtime_database(
+        self,
+        database_type: Mock,
+        migrator_type: Mock,
+    ) -> None:
+        @asynccontextmanager
+        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            raise RuntimeError('synthetic-private-diagnostic')
+            yield
+
+        from mosaic.components.ada.ada_application_error import AdaApplicationError
+
+        application = Backend.create_application(
+            ada_app_factory=lambda: FastAPI(lifespan=lifespan)
+        )
+        with self.assertRaises(AdaApplicationError) as caught, TestClient(application):
+            self.fail('Failed startup should prevent serving requests')
+        self.assertNotIn('synthetic-private-diagnostic', str(caught.exception))
+        self.assertEqual(database_type.return_value.dispose.call_count, 2)
 
     def test_enabled_pilot_administration_supports_fastapi_application(
         self,
@@ -309,9 +358,7 @@ class TestBackend(unittest.TestCase):
             application = Backend.create_application(
                 ada_app_factory=FastAPI,
                 database_configuration=MosaicDatabaseConfiguration(
-                    database_path=(
-                        Path(temporary_directory) / 'mosaic.db'
-                    )
+                    database_path=(Path(temporary_directory) / 'mosaic.db')
                 ),
                 pilot_administration_configuration=(
                     PilotAdministrationConfiguration(

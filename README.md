@@ -1219,9 +1219,18 @@ The current MVP has deliberate boundaries:
 
 - Operations are read-only by default. Mutating workflows and approval gates
   are not yet implemented.
-- ADA supplies REST, SSE, WebSocket, session, event, state, artifact, memory,
-  and development UI interfaces. MOSAIC does not implement a parallel API
-  transport.
+- ADA remains responsible for session persistence and agent execution.
+  `mosaic-backend` creates a separate public MOSAIC app and keeps the generated
+  ADA app private and unmounted. An in-process ASGI adapter consumes its HTTP
+  responses without loopback networking, forwarded user credentials, SDK
+  patches, or direct runner/service calls. Private startup and shutdown are
+  coordinated with public application lifespan.
+- Raw ADA routes and the ADA development UI are not exposed by
+  `mosaic-backend`. The original ADA development launch remains separate.
+  Public conversation routes are still contract-only: this boundary does not
+  yet implement their handlers, invocation management, or cancellation.
+  Local tests use synthetic ASGI apps; the actual ADA runtime still requires
+  startup, session API and streaming verification before acceptance.
 - Caller-supplied user, session, application, and header values are not proof
   of identity. Authentication must occur at a trusted boundary ahead of ADA.
 - The current MCP header path transports identity-related values but is not an
