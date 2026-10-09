@@ -6,6 +6,7 @@ from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigra
 from .models.backend_configuration import BackendConfiguration
 from .models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from .models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
+from .models.identity.trusted_request_configuration import TrustedRequestConfiguration
 from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
 from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 
@@ -23,6 +24,7 @@ class Backend:
         pilot_administration_configuration: (
             PilotAdministrationConfiguration | None
         ) = None,
+        trusted_request_configuration: TrustedRequestConfiguration | None = None,
         skill_catalogue_snapshot: SkillCatalogueSnapshot | None = None,
     ) -> Any:
         """
@@ -38,6 +40,8 @@ class Backend:
             authentication and cookie configuration.
         :param pilot_administration_configuration: Optional temporary pilot
             administration configuration.
+        :param trusted_request_configuration: Server-owned application identity
+            used by public API dependencies.
         :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
 
         :return: Configured ADA ASGI application.
@@ -54,6 +58,8 @@ class Backend:
             pilot_administration_configuration = (
                 PilotAdministrationConfiguration()
             )
+        if trusted_request_configuration is None:
+            trusted_request_configuration = TrustedRequestConfiguration()
         database = MosaicDatabase(database_configuration)
         try:
             MosaicDatabaseMigrator(database).upgrade()
@@ -73,6 +79,9 @@ class Backend:
         from .components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
         from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
         from .components.identity.authentication_failure_handler import AuthenticationFailureHandler
+        from .components.identity.trusted_request_context_dependency import TrustedRequestContextDependency
+        from .components.api.conversation_api_contract import ConversationApiContract
+        from .components.api.conversation_api_documentation import ConversationApiDocumentation
 
         runtime_database = MosaicDatabase(database_configuration)
         try:
@@ -86,6 +95,10 @@ class Backend:
             PilotAuthenticationApi(
                 pilot_authentication_configuration,
                 authenticator,
+            ).register_routes(application)
+            ConversationApiDocumentation(
+                ConversationApiContract(pilot_authentication_configuration),
+                TrustedRequestContextDependency(trusted_request_configuration),
             ).register_routes(application)
             if not pilot_administration_configuration.enabled:
                 return application

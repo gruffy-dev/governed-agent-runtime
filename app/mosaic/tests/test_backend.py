@@ -173,6 +173,7 @@ class TestBackend(unittest.TestCase):
                         json={'token': 'persisted-valid-token'},
                     )
                     cookie_response = client.get('/protected')
+                    contract_response = client.get('/api/v1/openapi.json')
                     with (
                         database.create_session() as session,
                         session.begin(),
@@ -200,6 +201,9 @@ class TestBackend(unittest.TestCase):
         self.assertEqual(sign_in_response.status_code, 204)
         self.assertNotIn('Secure', sign_in_response.headers['Set-Cookie'])
         self.assertEqual(cookie_response.status_code, 200)
+        self.assertEqual(contract_response.status_code, 200)
+        self.assertEqual(contract_response.json()['info']['version'], '1.0.0')
+        self.assertNotIn('/protected', contract_response.json()['paths'])
         self.assertEqual(
             cookie_response.json(),
             {'user_id': 'authenticated-user'},
