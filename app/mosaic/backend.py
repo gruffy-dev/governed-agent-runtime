@@ -72,9 +72,11 @@ class Backend:
         from .components.identity.pilot_authentication_api import PilotAuthenticationApi
         from .components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
         from .components.identity.pilot_bearer_authenticator import PilotBearerAuthenticator
+        from .components.identity.authentication_failure_handler import AuthenticationFailureHandler
 
         runtime_database = MosaicDatabase(database_configuration)
         try:
+            AuthenticationFailureHandler().register(application)
             authenticator = PilotBearerAuthenticator(runtime_database)
             application.add_middleware(
                 PilotAuthenticationMiddleware,

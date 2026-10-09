@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from mosaic.components.identity.authentication_failure_handler import AuthenticationFailureHandler
 from mosaic.components.identity.pilot_authentication_middleware import PilotAuthenticationMiddleware
 from mosaic.components.identity.trusted_request_context_dependency import TrustedRequestContextDependency
 from mosaic.models.identity.trusted_request_configuration import TrustedRequestConfiguration
@@ -95,7 +96,8 @@ class TestTrustedRequestContextDependency(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json(), {'detail': 'Unauthorized'})
+        self.assertEqual(response.json()['detail'], 'Unauthorized')
+        self.assertEqual(response.json()['error_code'], 'unauthorized')
         self.assertEqual(response.headers['WWW-Authenticate'], 'Bearer')
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
 
@@ -133,6 +135,7 @@ class TestTrustedRequestContextDependency(unittest.TestCase):
     @staticmethod
     def _create_application(*, authenticated: bool) -> FastAPI:
         application = FastAPI()
+        AuthenticationFailureHandler().register(application)
         dependency = TrustedRequestContextDependency(
             TrustedRequestConfiguration(app_name='configured-application')
         )

@@ -1,8 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Response
 
+from .authentication_error import AuthenticationError
 from .pilot_bearer_authenticator import PilotBearerAuthenticator
+from ...models.identity.authentication_error_response import AuthenticationErrorResponse
 from ...models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from ...models.identity.pilot_token_sign_in_request import PilotTokenSignInRequest
 
@@ -34,6 +36,12 @@ class PilotAuthenticationApi:
             self.sign_in,
             methods=['POST'],
             status_code=204,
+            responses={
+                401: {
+                    'model': AuthenticationErrorResponse,
+                    'description': 'Invalid or unavailable pilot credential.',
+                },
+            },
         )
         router.add_api_route(
             '/logout',
@@ -54,18 +62,11 @@ class PilotAuthenticationApi:
 
         :return: Empty response setting the authentication cookie.
 
-        :raises HTTPException: If the supplied token does not resolve.
+        :raises AuthenticationError: If the supplied token does not resolve.
         """
         plaintext_token = request.token.get_secret_value()
         if self._authenticator.authenticate(plaintext_token) is None:
-            raise HTTPException(
-                status_code=401,
-                detail='Unauthorized',
-                headers={
-                    'Cache-Control': 'no-store',
-                    'WWW-Authenticate': 'Bearer',
-                },
-            )
+            raise AuthenticationError()
 
         response = Response(
             status_code=204,

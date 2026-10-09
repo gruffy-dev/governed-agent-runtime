@@ -207,6 +207,16 @@ class TestBackend(unittest.TestCase):
         self.assertEqual(disabled_cookie_response.status_code, 401)
         self.assertEqual(logout_response.status_code, 204)
         self.assertEqual(after_logout_response.status_code, 401)
+        for response in (
+            missing_response,
+            disabled_cookie_response,
+            after_logout_response,
+        ):
+            self.assertEqual(response.json()['error_code'], 'unauthorized')
+            self.assertEqual(
+                response.json()['correlation_id'],
+                response.headers['X-Correlation-ID'],
+            )
 
     @patch('mosaic.backend.MosaicDatabaseMigrator')
     @patch('mosaic.backend.MosaicDatabase')
@@ -319,6 +329,12 @@ class TestBackend(unittest.TestCase):
         self.assertEqual(protected_response.status_code, 401)
         self.assertEqual(users_response.status_code, 403)
         self.assertEqual(skills_response.status_code, 403)
+        for response in (users_response, skills_response):
+            self.assertEqual(response.json()['error_code'], 'forbidden')
+            self.assertEqual(
+                response.json()['correlation_id'],
+                response.headers['X-Correlation-ID'],
+            )
 
     def test_startup_uses_validated_configuration(self) -> None:
         runner = Mock()

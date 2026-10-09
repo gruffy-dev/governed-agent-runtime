@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from mosaic.components.identity.authentication_failure_handler import AuthenticationFailureHandler
 from mosaic.components.identity.pilot_authentication_api import PilotAuthenticationApi
 from mosaic.models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from mosaic.models.identity.trusted_user_context import TrustedUserContext
@@ -45,6 +46,7 @@ class TestPilotAuthenticationApi(unittest.TestCase):
 
     def test_invalid_token_returns_generic_unauthorized_response(self) -> None:
         application = FastAPI()
+        AuthenticationFailureHandler().register(application)
         authenticator = Mock()
         authenticator.authenticate.return_value = None
         PilotAuthenticationApi(
@@ -59,7 +61,12 @@ class TestPilotAuthenticationApi(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json(), {'detail': 'Unauthorized'})
+        self.assertEqual(response.json()['detail'], 'Unauthorized')
+        self.assertEqual(response.json()['error_code'], 'unauthorized')
+        self.assertEqual(
+            response.json()['correlation_id'],
+            response.headers['X-Correlation-ID'],
+        )
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
         self.assertEqual(
             response.headers['WWW-Authenticate'],

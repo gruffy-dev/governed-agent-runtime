@@ -1,8 +1,8 @@
-from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from .authentication_failure_handler import AuthenticationFailureHandler
 from .pilot_bearer_authenticator import PilotBearerAuthenticator
 from ...models.identity.trusted_user_context import TrustedUserContext
 
@@ -24,6 +24,7 @@ class PilotAuthenticationMiddleware:
         self._app = app
         self._authenticator = authenticator
         self._cookie_name = cookie_name
+        self._failure_handler = AuthenticationFailureHandler()
 
     async def __call__(
         self,
@@ -124,14 +125,14 @@ class PilotAuthenticationMiddleware:
             '/api/v1/admin/'
         )
 
-    @staticmethod
     async def _reject(
+        self,
         scope: Scope,
         receive: Receive,
         send: Send,
     ) -> None:
         """
-        Return the same generic unauthorized outcome for every failure.
+        Log and return the same correlated unauthorized HTTP failure.
 
         :param scope: Unauthorized HTTP or WebSocket connection scope.
         :param receive: ASGI inbound-message receiver.
@@ -146,12 +147,5 @@ class PilotAuthenticationMiddleware:
                 }
             )
             return
-        response = JSONResponse(
-            status_code=401,
-            content={'detail': 'Unauthorized'},
-            headers={
-                'Cache-Control': 'no-store',
-                'WWW-Authenticate': 'Bearer',
-            },
-        )
+        response = self._failure_handler.create_response(401)
         await response(scope, receive, send)

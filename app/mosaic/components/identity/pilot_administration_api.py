@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Response
 from sqlalchemy.exc import IntegrityError
 
+from .authentication_error import AuthenticationError
 from .pilot_user_administration_service import PilotUserAdministrationService
 from ..persistence.stale_workspace_version_error import StaleWorkspaceVersionError
 from ...models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
@@ -229,11 +230,11 @@ class PilotAdministrationApi:
 
         :param authorization: Caller-supplied Authorization header.
 
-        :raises HTTPException: If the bearer credential is absent or invalid.
+        :raises AuthenticationError: If the bearer credential is absent or invalid.
         """
         configured_secret = self._configuration.administrator_secret
         if configured_secret is None or authorization is None:
-            raise HTTPException(status_code=403, detail='Forbidden')
+            raise AuthenticationError(status_code=403)
 
         scheme, separator, supplied_secret = authorization.partition(' ')
         expected_secret = configured_secret.get_secret_value()
@@ -242,4 +243,4 @@ class PilotAdministrationApi:
             or scheme.lower() != 'bearer'
             or not compare_digest(supplied_secret, expected_secret)
         ):
-            raise HTTPException(status_code=403, detail='Forbidden')
+            raise AuthenticationError(status_code=403)

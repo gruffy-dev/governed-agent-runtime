@@ -151,7 +151,12 @@ class TestPilotAuthenticationMiddleware(unittest.TestCase):
 
         for response in (*responses, ambiguous_response):
             self.assertEqual(response.status_code, 401)
-            self.assertEqual(response.json(), {'detail': 'Unauthorized'})
+            self.assertEqual(response.json()['detail'], 'Unauthorized')
+            self.assertEqual(response.json()['error_code'], 'unauthorized')
+            self.assertEqual(
+                response.json()['correlation_id'],
+                response.headers['X-Correlation-ID'],
+            )
             self.assertEqual(
                 response.headers['WWW-Authenticate'],
                 'Bearer',
