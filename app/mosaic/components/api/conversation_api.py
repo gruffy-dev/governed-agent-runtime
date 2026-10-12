@@ -3,16 +3,22 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 
+from .ada_streaming_response import AdaStreamingResponse
 from .conversation_api_audit import ConversationApiAudit
+from .conversation_not_found_error import ConversationNotFoundError
 from .conversation_service import ConversationService
 from .conversation_session_projector import ConversationSessionProjector
 from ..ada.ada_session_api import AdaSessionApi
+from ..ada.ada_invocation_api import AdaInvocationApi
+from ..ada.ada_application_error import AdaApplicationError
 from ..identity.trusted_request_context_dependency import TrustedRequestContextDependency
 from ..persistence.mosaic_database import MosaicDatabase
 from ...models.api.conversation_detail import ConversationDetail
 from ...models.api.conversation_list_response import ConversationListResponse
 from ...models.api.conversation_projection_configuration import ConversationProjectionConfiguration
 from ...models.api.create_conversation_request import CreateConversationRequest
+from ...models.api.submit_message_request import SubmitMessageRequest
+from ...models.ada.ada_application_adapter_configuration import AdaApplicationAdapterConfiguration
 from ...models.identity.trusted_request_context import TrustedRequestContext
 
 
@@ -22,6 +28,7 @@ class ConversationApi:
         database: MosaicDatabase,
         context_dependency: TrustedRequestContextDependency,
         projection_configuration: ConversationProjectionConfiguration,
+        adapter_configuration: AdaApplicationAdapterConfiguration,
     ) -> None:
         """
         Bind conversation wrappers to shared trusted identity and public projection.
@@ -29,15 +36,18 @@ class ConversationApi:
         :param database: MOSAIC-owned conversation metadata database.
         :param context_dependency: Backend-owned resolver required by every handler.
         :param projection_configuration: Configured public agent and title limits.
+        :param adapter_configuration: Existing private transport and event bounds.
         """
         self._database = database
         self._context_dependency = context_dependency
         self._projector = ConversationSessionProjector(projection_configuration)
         self._audit = ConversationApiAudit()
+        self._adapter_configuration = adapter_configuration
+        self._public_agent_name = projection_configuration.public_agent_name
 
     def register_routes(self, application: FastAPI) -> None:
         """
-        Register create, list and get handlers with mandatory trusted context.
+        Register conversation and streaming handlers with mandatory trusted context.
 
         :param application: Public MOSAIC application receiving owned routes.
         """
@@ -110,6 +120,41 @@ class ConversationApi:
             response.headers['X-Correlation-ID'] = str(self._audit.completed(context, 'get', 200))
             return detail
 
+        async def submit_message(
+            conversation_id: UUID,
+            body: SubmitMessageRequest,
+            request: Request,
+            context: Annotated[
+                TrustedRequestContext, Depends(self._context_dependency)
+            ],
+        ) -> AdaStreamingResponse:
+            """
+            Stream an owned conversation's answer using ADK data events.
+
+            :param conversation_id: Validated conversation routing reference.
+            :param body: Strict text-only request with no identity or state claims.
+            :param request: Request carrying the private server transport.
+            :param context: Dependency-derived application and user identity.
+
+            :return: Incremental response whose disconnect closes private execution.
+            """
+            await self._service(request).require_owned_metadata(context, conversation_id)
+            stream = AdaInvocationApi(request.app.state.ada_transport).stream(
+                context, conversation_id, body
+            )
+            try:
+                response = await AdaStreamingResponse.create(
+                    stream,
+                    self._adapter_configuration.maximum_response_bytes,
+                    self._public_agent_name,
+                )
+            except AdaApplicationError as error:
+                if error.status_code == 404:
+                    raise ConversationNotFoundError() from None
+                raise
+            response.headers['X-Correlation-ID'] = str(self._audit.completed(context, 'submit', 200))
+            return response
+
         router.add_api_route(
             '',
             create,
@@ -128,6 +173,12 @@ class ConversationApi:
             get,
             methods=['GET'],
             response_model=ConversationDetail,
+        )
+        router.add_api_route(
+            '/{conversation_id}/messages',
+            submit_message,
+            methods=['POST'],
+            response_class=AdaStreamingResponse,
         )
         application.include_router(router)
 

@@ -156,11 +156,12 @@ class Backend:
             ConversationApiFailureHandler().register(application)
             ConversationApi(
                 runtime_database, context_dependency, conversation_projection_configuration,
+                ada_adapter_configuration,
             ).register_routes(application)
             ConversationApiDocumentation(
                 ConversationApiContract(
                     pilot_authentication_configuration,
-                    implemented_operations=('createConversation', 'listConversations', 'getConversation'),
+                    implemented_operations=('createConversation', 'listConversations', 'getConversation', 'submitMessage'),
                 ),
                 context_dependency,
             ).register_routes(application)

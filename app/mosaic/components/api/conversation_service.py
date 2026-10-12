@@ -87,6 +87,26 @@ class ConversationService:
             raise
         return self._projector.detail(complete, created_at=created_at)
 
+    async def require_owned_metadata(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+    ) -> None:
+        """
+        Require owned metadata before the invocation adapter verifies the ADA session.
+
+        Do not fetch or project historical messages merely to submit a new one.
+
+        :param context: Server-derived application and user identity.
+        :param conversation_id: Validated conversation routing reference.
+
+        :raises ConversationNotFoundError: If owned creation metadata is absent.
+        :raises SQLAlchemyError: If metadata cannot be read.
+        """
+        created_at = await run_in_threadpool(self._creation_time, context, conversation_id)
+        if created_at is None:
+            raise ConversationNotFoundError()
+
     async def list(self, context: TrustedRequestContext) -> ConversationListResponse:
         """
         Hydrate owned public conversations and order them by latest activity.

@@ -3,12 +3,9 @@ from typing import Any
 from pydantic import BaseModel
 
 from ...models.api.api_error_response import ApiErrorResponse
-from ...models.api.conversation_conflict_response import ConversationConflictResponse
 from ...models.api.conversation_detail import ConversationDetail
 from ...models.api.conversation_list_response import ConversationListResponse
 from ...models.api.create_conversation_request import CreateConversationRequest
-from ...models.api.invocation_status import InvocationStatus
-from ...models.api.invocation_stream_event import InvocationStreamEvent
 from ...models.api.submit_message_request import SubmitMessageRequest
 from ...models.identity.authentication_error_response import AuthenticationErrorResponse
 from ...models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
@@ -30,10 +27,10 @@ class ConversationApiContract:
 
     def build(self) -> dict[str, Any]:
         """
-        Generate the versioned contract solely from MOSAIC-owned models.
+        Generate the conversation contract with native ADK SSE framing.
 
         Mark operations available only when the composing backend registers
-        their handlers. This document contains no raw ADA schemas.
+        their handlers. The stream retains ADK answer fields, not SDK schemas.
 
         :return: OpenAPI document for the planned public conversation API.
         """
@@ -43,11 +40,8 @@ class ConversationApiContract:
             SubmitMessageRequest,
             ConversationDetail,
             ConversationListResponse,
-            InvocationStatus,
-            InvocationStreamEvent,
             ApiErrorResponse,
             AuthenticationErrorResponse,
-            ConversationConflictResponse,
         ):
             schema = model.model_json_schema(
                 ref_template='#/components/schemas/{model}'
@@ -81,32 +75,13 @@ class ConversationApiContract:
             '/api/v1/conversations/{conversation_id}/messages': {
                 'post': self._operation(
                     'submitMessage',
-                    'Submit text using fetch POST and consume named SSE events. '
-                    'Disconnection does not cancel work. A busy conversation returns '
-                    '409 immediately; the message is not queued.',
-                    InvocationStreamEvent,
+                    'Submit text using fetch POST and consume ADK data events. '
+                    'Browser disconnection stops execution; saved session history remains. '
+                    'No background continuation or stream replay is provided.',
+                    ApiErrorResponse,
                     request_model=SubmitMessageRequest,
                     owned_conversation=True,
                     streaming=True,
-                ),
-            },
-            '/api/v1/conversations/{conversation_id}/invocations/current': {
-                'get': self._operation(
-                    'getCurrentInvocation',
-                    'Return current or most recent invocation status, or idle when none exists. '
-                    'Process termination interrupts work; restart never resumes it.',
-                    InvocationStatus,
-                    owned_conversation=True,
-                ),
-            },
-            '/api/v1/conversations/{conversation_id}/invocations/current/cancel': {
-                'post': self._operation(
-                    'cancelCurrentInvocation',
-                    'Cancel owned active work and acknowledge only after terminal cancellation. '
-                    'Repeated cancellation is idempotent. Idle or already terminal invocations '
-                    'return their unchanged status. Unknown or foreign conversations return 404.',
-                    InvocationStatus,
-                    owned_conversation=True,
                 ),
             },
         }
@@ -130,9 +105,7 @@ class ConversationApiContract:
                 '401': 'unauthorized',
                 '403': 'forbidden',
                 '404': 'conversation_not_found',
-                '409': 'conversation_busy',
                 '500': 'internal_error',
-                'failed_sse_event': 'invocation_failed',
             },
             'x-mosaic-authentication-examples': [
                 {
@@ -230,18 +203,15 @@ class ConversationApiContract:
                 'Conversation unavailable; foreign IDs are not disclosed.',
             )
         if streaming:
-            responses['409'] = self._response(
-                ConversationConflictResponse,
-                'This conversation already has an active invocation. Wait for completion or cancel it.',
-            )
             operation['x-mosaic-sse'] = {
-                'events': ['started', 'text_delta', 'completed', 'failed', 'cancelled'],
-                'framing': 'event: <event name>\ndata: <InvocationStreamEvent JSON>\n\n',
-                'terminal_events': ['completed', 'failed', 'cancelled'],
-                'sequence': 'started, zero or more text_delta events, then exactly one terminal event.',
-                'errors': 'Before streaming, return the HTTP error envelope; after streaming starts, emit failed.',
-                'reconnection': 'No stream replay. Reopen history and check current invocation status.',
-                'privacy': 'Public assistant text and safe failures only; no tool results or internal state.',
+                'format': 'ADK',
+                'framing': 'data: <ADK JSON record>\n\n',
+                'text': 'Read content.parts[].text. Partial text is incremental; the final non-partial record repeats the full model turn.',
+                'errors': 'Before streaming, return the HTTP error envelope; after streaming starts, emit {"error":"Invocation failed"}. EOF alone is not success.',
+                'disconnect': 'Stop private execution. Do not reconstruct or resume an interrupted response.',
+                'reconnection': 'Reload saved conversation history; no stream replay.',
+                'privacy': 'Only the configured assistant text and answer metadata are relayed. No thoughts, signatures, tools, state or diagnostic details.',
+                'concurrency': 'No HTTP same-conversation concurrency guarantee is provided. Submit one message at a time.',
             }
             responses[str(success_status)]['headers']['X-Accel-Buffering'] = {
                 'description': 'Disable intermediary buffering.',
@@ -270,17 +240,13 @@ class ConversationApiContract:
             'description': description,
             'headers': {
                 'X-Correlation-ID': {
-                    'description': 'Server-generated correlation identifier shared with logs and SSE events.',
+                    'description': 'Server-generated correlation identifier shared with safe HTTP audit logs.',
                     'schema': {'type': 'string', 'format': 'uuid'},
                 },
                 'Cache-Control': {'schema': {'type': 'string', 'const': 'no-store'}},
             },
             'content': {media_type: {'schema': schema}},
         }
-        if streaming:
-            response['content'][media_type]['x-mosaic-event-schema'] = self._reference(
-                model
-            )
         if model is AuthenticationErrorResponse:
             response['headers']['WWW-Authenticate'] = {
                 'description': 'Bearer challenge on 401 responses only.',

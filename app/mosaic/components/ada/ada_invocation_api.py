@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from uuid import UUID
 
@@ -26,20 +26,20 @@ class AdaInvocationApi:
         context: TrustedRequestContext,
         conversation_id: UUID,
         message: SubmitMessageRequest,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncGenerator[Message, None]:
         """
         Execute text only after verifying the conversation in the trusted scope.
 
         Construct the complete ADA body server-side. No caller identity, state,
-        headers or arbitrary ADA options are forwarded. This private stream must
-        be consumed by backend-owned orchestration, not a browser subscriber;
-        its raw events must be projected before crossing the public boundary.
+        headers or arbitrary ADA options are forwarded. The browser response
+        owns this stream: closing it stops private execution. Internal payloads
+        and diagnostic text must be excluded before crossing the public boundary.
 
         :param context: Identity resolved by the trusted request dependency.
         :param conversation_id: UUID routing reference whose ownership is verified.
         :param message: Strict public text-only message model.
 
-        :return: Internal ASGI messages for application-owned stream processing.
+        :return: Internal ASGI messages for the authenticated streaming relay.
 
         :raises AdaApplicationError: If ownership, input or private execution fails.
         """

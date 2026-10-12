@@ -13,8 +13,8 @@ class TestConversationApiContract(unittest.TestCase):
         OpenAPI.model_validate(contract)
         self.assertEqual(contract['openapi'], '3.1.0')
         self.assertEqual(contract['info']['version'], '1.0.0')
-        self.assertEqual(len(contract['paths']), 5)
-        self.assertEqual(sum(len(path) for path in contract['paths'].values()), 6)
+        self.assertEqual(len(contract['paths']), 3)
+        self.assertEqual(sum(len(path) for path in contract['paths'].values()), 4)
         self.assertTrue(
             all(path.startswith('/api/v1/conversations') for path in contract['paths'])
         )
@@ -53,7 +53,7 @@ class TestConversationApiContract(unittest.TestCase):
         )
         self.assertEqual(len(contract['x-mosaic-authentication-examples']), 2)
 
-    def test_streaming_contract_documents_framing_terminal_events_and_conflict(
+    def test_streaming_contract_documents_native_adk_and_disconnect(
         self,
     ) -> None:
         operation = self._build_contract()['paths'][
@@ -67,17 +67,13 @@ class TestConversationApiContract(unittest.TestCase):
         self.assertEqual(
             stream['headers']['X-Accel-Buffering']['schema']['const'], 'no'
         )
-        self.assertEqual(
-            operation['x-mosaic-sse']['terminal_events'],
-            ['completed', 'failed', 'cancelled'],
-        )
+        self.assertEqual(operation['x-mosaic-sse']['format'], 'ADK')
         self.assertTrue(operation['x-mosaic-sse']['framing'].endswith('\n\n'))
-        self.assertEqual(
-            operation['responses']['409']['content']['application/json']['schema'][
-                '$ref'
-            ],
-            '#/components/schemas/ConversationConflictResponse',
-        )
+        self.assertNotIn('409', operation['responses'])
+        self.assertNotIn('terminal_events', operation['x-mosaic-sse'])
+        self.assertIn('Stop private execution', operation['x-mosaic-sse']['disconnect'])
+        self.assertNotIn('x-mosaic-event-schema', stream['content']['text/event-stream'])
+        self.assertNotIn('InvocationStreamEvent', self._build_contract()['components']['schemas'])
 
     def _check_references(self, value: Any, contract: dict[str, Any]) -> None:
         if isinstance(value, dict):

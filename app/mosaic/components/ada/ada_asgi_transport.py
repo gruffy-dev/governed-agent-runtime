@@ -87,8 +87,8 @@ class AdaAsgiTransport:
         """
         Yield response headers and body chunks before private execution finishes.
 
-        The consuming application task owns execution. Closing this iterator
-        cancels private execution; browser subscribers must never own it.
+        The consuming response owns execution. Closing this iterator cancels
+        private execution, including when the browser disconnects.
         Request scopes and queues are independent for every invocation.
 
         :param method: Internal HTTP method.

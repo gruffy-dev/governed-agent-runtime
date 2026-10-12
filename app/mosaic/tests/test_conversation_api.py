@@ -1,5 +1,7 @@
+import json
 import time
 import unittest
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +11,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
+from starlette.responses import StreamingResponse
 
 from mosaic.backend import Backend
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
@@ -109,6 +112,146 @@ class TestConversationApi(unittest.TestCase):
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
         self.assertEqual(UUID(response.headers['X-Correlation-ID']).version, 4)
         return response.json()
+
+    def _install_stream(self, *, fail: bool = False, reject: bool = False) -> None:
+        self.invocations: list[dict[str, Any]] = []
+        self.private_headers: list[dict[str, str]] = []
+
+        @self.private.post('/run_sse')
+        async def run(request: Request) -> StreamingResponse:
+            self.invocations.append(await request.json())
+            self.private_headers.append(dict(request.headers))
+            if reject:
+                raise HTTPException(status_code=500, detail='synthetic-private-detail')
+
+            async def events() -> AsyncIterator[bytes]:
+                record = {
+                    'id': 'synthetic-event',
+                    'invocationId': 'synthetic-invocation',
+                    'author': 'mosaic',
+                    'partial': True,
+                    'content': {'role': 'model', 'parts': [{'text': 'Hello'}]},
+                }
+                yield b'data: ' + json.dumps(record).encode() + b'\n\n'
+                if fail:
+                    yield b'data: {"error":"synthetic-private-detail"}\n\n'
+                else:
+                    record['partial'] = False
+                    yield b'data: ' + json.dumps(record).encode() + b'\n\n'
+
+            return StreamingResponse(events(), media_type='text/event-stream')
+
+    def test_stream_uses_trusted_identity_and_preserves_native_adk_text(self) -> None:
+        self._install_stream()
+        created = self._create()
+        response = self.client.post(
+            f'/api/v1/conversations/{created["conversation_id"]}/messages',
+            headers={**self.headers, 'X-User-ID': 'synthetic-user-b'},
+            params={'app_name': 'other-app', 'user_id': 'synthetic-user-b'},
+            json={'text': 'Synthetic greeting'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers['Content-Type'].startswith('text/event-stream'))
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertEqual(response.headers['X-Accel-Buffering'], 'no')
+        self.assertEqual(UUID(response.headers['X-Correlation-ID']).version, 4)
+        events = [json.loads(line[5:]) for line in response.text.splitlines() if line.startswith('data:')]
+        self.assertEqual([event['partial'] for event in events], [True, False])
+        self.assertEqual([event['content']['parts'][0]['text'] for event in events], ['Hello', 'Hello'])
+        self.assertNotIn('event:', response.text)
+        self.assertEqual(self.invocations, [{
+            'app_name': 'synthetic-app',
+            'user_id': 'synthetic-user-a',
+            'session_id': created['conversation_id'],
+            'new_message': {'role': 'user', 'parts': [{'text': 'Synthetic greeting'}]},
+            'streaming': True,
+        }])
+        self.assertEqual(self.private_headers, [{'content-type': 'application/json'}])
+
+    def test_stream_cookie_authentication_and_foreign_ownership(self) -> None:
+        self._install_stream()
+        created = self._create()
+        self.client.cookies.set('mosaic_pilot_session', 'synthetic-token-a')
+        owned = self.client.post(
+            f'/api/v1/conversations/{created["conversation_id"]}/messages',
+            json={'text': 'Synthetic greeting'},
+        )
+        self.assertEqual(owned.status_code, 200)
+        self.client.cookies.clear()
+        self.invocations.clear()
+        self.calls.clear()
+        for identifier in (created['conversation_id'], str(uuid4())):
+            response = self.client.post(
+                f'/api/v1/conversations/{identifier}/messages',
+                headers={'Authorization': 'Bearer synthetic-token-b'},
+                json={'text': 'Synthetic greeting'},
+            )
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json()['error_code'], 'conversation_not_found')
+        self.assertEqual(self.invocations, [])
+        self.assertEqual(self.calls, [])
+
+    def test_stream_rejects_anonymous_disabled_and_spoofed_body(self) -> None:
+        self._install_stream()
+        created = self._create()
+        path = f'/api/v1/conversations/{created["conversation_id"]}/messages'
+        self.calls.clear()
+        self.assertEqual(self.client.post(path, json={'text': 'Hello'}).status_code, 401)
+        for field in ('user_id', 'app_name', 'workspace_id', 'session_id', 'state'):
+            response = self.client.post(path, headers=self.headers, json={'text': 'Hello', field: 'synthetic-private-claim'})
+            self.assertEqual(response.status_code, 400)
+            self.assertNotIn('synthetic-private', response.text)
+        with self.database.create_session() as session, session.begin():
+            UserAccessRepository(session).disable_user('synthetic-user-a', datetime.now(UTC))
+        self.assertEqual(self.client.post(path, headers=self.headers, json={'text': 'Hello'}).status_code, 401)
+        self.assertEqual(self.invocations, [])
+        self.assertEqual(self.calls, [])
+
+    def test_stream_errors_before_and_after_headers_are_safe(self) -> None:
+        self._install_stream(fail=True)
+        created = self._create()
+        response = self.client.post(
+            f'/api/v1/conversations/{created["conversation_id"]}/messages',
+            headers=self.headers, json={'text': 'Hello'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"error":"Invocation failed"', response.text)
+        self.assertNotIn('synthetic-private', response.text)
+
+    def test_stream_rejects_invalid_input_and_deleted_session_before_execution(self) -> None:
+        self._install_stream()
+        created = self._create()
+        path = f'/api/v1/conversations/{created["conversation_id"]}/messages'
+        self.calls.clear()
+        for body in ({'text': ''}, {'text': '   '}, {}):
+            response = self.client.post(path, headers=self.headers, json=body)
+            self.assertEqual(response.status_code, 400)
+        invalid_id = self.client.post(
+            '/api/v1/conversations/invalid-id/messages', headers=self.headers, json={'text': 'Hello'}
+        )
+        malformed = self.client.post(
+            path, headers={**self.headers, 'Content-Type': 'application/json'}, content='{"text":'
+        )
+        self.assertEqual(invalid_id.status_code, 400)
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(self.calls, [])
+        del self.records[('synthetic-app', 'synthetic-user-a', created['conversation_id'])]
+        deleted = self.client.post(path, headers=self.headers, json={'text': 'Hello'})
+        self.assertEqual(deleted.status_code, 404)
+        self.assertEqual(deleted.json()['error_code'], 'conversation_not_found')
+        self.assertEqual(self.invocations, [])
+
+    def test_private_http_rejection_returns_json_before_public_stream_starts(self) -> None:
+        self._install_stream(reject=True)
+        created = self._create()
+        response = self.client.post(
+            f'/api/v1/conversations/{created["conversation_id"]}/messages',
+            headers=self.headers, json={'text': 'Hello'},
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.headers['Content-Type'], 'application/json')
+        self.assertEqual(response.json()['error_code'], 'internal_error')
+        self.assertNotIn('synthetic-private', response.text)
 
     def test_create_list_and_get_use_public_models_only(self) -> None:
         created = self._create()
@@ -357,7 +500,7 @@ class TestConversationApi(unittest.TestCase):
             if operation['x-mosaic-implementation'] == 'available'
         }
         self.assertEqual(
-            available, {'createConversation', 'listConversations', 'getConversation'}
+            available, {'createConversation', 'listConversations', 'getConversation', 'submitMessage'}
         )
 
     def test_inconsistent_private_ownership_fails_closed_with_safe_correlated_log(

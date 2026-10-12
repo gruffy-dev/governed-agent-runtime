@@ -16,11 +16,14 @@ class ConversationApiAudit:
     def completed(
         self,
         context: TrustedRequestContext,
-        operation: Literal['create', 'list', 'get'],
+        operation: Literal['create', 'list', 'get', 'submit'],
         status_code: int,
     ) -> UUID:
         """
-        Record successful trusted ownership without paths, text or credentials.
+        Record successful HTTP setup without paths, text or credentials.
+
+        For submit, HTTP success means streaming has started, not that the model
+        invocation has completed successfully.
 
         :param context: Server-derived application and user identity.
         :param operation: Backend-selected lifecycle operation name.
