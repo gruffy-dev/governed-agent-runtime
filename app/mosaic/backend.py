@@ -18,6 +18,7 @@ from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
 from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 from .components.identity.trusted_api_boundary import TrustedApiBoundary
 from .components.identity.trusted_request_context_dependency import TrustedRequestContextDependency
+from .models.api.conversation_projection_configuration import ConversationProjectionConfiguration
 
 
 class Backend:
@@ -36,6 +37,7 @@ class Backend:
         trusted_request_configuration: TrustedRequestConfiguration | None = None,
         skill_catalogue_snapshot: SkillCatalogueSnapshot | None = None,
         ada_adapter_configuration: AdaApplicationAdapterConfiguration | None = None,
+        conversation_projection_configuration: ConversationProjectionConfiguration | None = None,
     ) -> Any:
         """
         Upgrade storage and create the public MOSAIC application around private ADA.
@@ -57,6 +59,7 @@ class Backend:
             used by public API dependencies.
         :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
         :param ada_adapter_configuration: Private ASGI lifecycle and transport bounds.
+        :param conversation_projection_configuration: Public agent and title limits.
 
         :return: Public MOSAIC app; generated ADA routes are not mounted.
 
@@ -131,6 +134,8 @@ class Backend:
         from .components.identity.authentication_failure_handler import AuthenticationFailureHandler
         from .components.api.conversation_api_contract import ConversationApiContract
         from .components.api.conversation_api_documentation import ConversationApiDocumentation
+        from .components.api.conversation_api import ConversationApi
+        from .components.api.conversation_api_failure_handler import ConversationApiFailureHandler
 
         try:
             if application_configurer is not None:
@@ -146,8 +151,17 @@ class Backend:
                 pilot_authentication_configuration,
                 authenticator,
             ).register_routes(application)
+            if conversation_projection_configuration is None:
+                conversation_projection_configuration = ConversationProjectionConfiguration()
+            ConversationApiFailureHandler().register(application)
+            ConversationApi(
+                runtime_database, context_dependency, conversation_projection_configuration,
+            ).register_routes(application)
             ConversationApiDocumentation(
-                ConversationApiContract(pilot_authentication_configuration),
+                ConversationApiContract(
+                    pilot_authentication_configuration,
+                    implemented_operations=('createConversation', 'listConversations', 'getConversation'),
+                ),
                 context_dependency,
             ).register_routes(application)
             if not pilot_administration_configuration.enabled:

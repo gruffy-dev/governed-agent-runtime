@@ -16,22 +16,24 @@ from ...models.identity.pilot_authentication_configuration import PilotAuthentic
 
 class ConversationApiContract:
     def __init__(
-        self, authentication_configuration: PilotAuthenticationConfiguration
+        self, authentication_configuration: PilotAuthenticationConfiguration,
+        *, implemented_operations: tuple[str, ...] = (),
     ) -> None:
         """
         Bind the public contract to the configured browser-cookie name.
 
         :param authentication_configuration: Pilot cookie configuration.
+        :param implemented_operations: Operation IDs registered by this backend.
         """
         self._authentication_configuration = authentication_configuration
+        self._implemented_operations = implemented_operations
 
     def build(self) -> dict[str, Any]:
         """
         Generate the versioned contract solely from MOSAIC-owned models.
 
-        Conversation operations are planned contracts until their runtime
-        handlers are implemented. This document registers no placeholder
-        conversation endpoints and contains no raw ADA schemas.
+        Mark operations available only when the composing backend registers
+        their handlers. This document contains no raw ADA schemas.
 
         :return: OpenAPI document for the planned public conversation API.
         """
@@ -199,7 +201,9 @@ class ConversationApiContract:
             'operationId': operation_id,
             'description': description,
             'security': [{'BearerAuth': []}, {'PilotCookie': []}],
-            'x-mosaic-implementation': 'planned',
+            'x-mosaic-implementation': (
+                'available' if operation_id in self._implemented_operations else 'planned'
+            ),
             'x-mosaic-identity-source': 'trusted_request_context',
             'responses': responses,
         }
