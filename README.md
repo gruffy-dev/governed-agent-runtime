@@ -602,48 +602,31 @@ assigned to teams, roles, and users. It is expected to govern Skill profiles,
 Target visibility, quotas, and access policy through the future identity,
 tenancy, RBAC, and frontend services.
 
-#### Temporary MVP configuration
+#### Pilot workspace Skill binding
 
-The MVP defines Skill profiles through deployment environment variables. The
-current demonstration configuration follows this pattern; the Skill list is
-shortened here for readability:
+The normal agent obtains its Skill allowlist from the authenticated user's
+workspace in `mosaic.db`. Administrators manage these assignments using
+`mosaic-admin`; the browser does not grant or modify access.
 
-```text
-MOSAIC_SKILLS_PROFILES={"mvp-demo":["inspect-container-platform-workloads","investigate-workload-degradation"]}
-MOSAIC_SKILLS_DEFAULT_PROFILE_ID=mvp-demo
-MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS={}
-```
+For each new Goal, MOSAIC verifies the enabled user and owned public
+conversation, then binds an immutable snapshot of the workspace's assigned
+Skills from the active catalogue. The snapshot remains unchanged throughout
+that Goal, including clarification. Assignment changes apply to the next Goal,
+without requiring a runtime restart. Missing or empty workspaces grant no
+Skills; unknown or withdrawn catalogue references cannot be loaded.
 
-| Environment variable | Meaning in the current configuration |
-| --- | --- |
-| `MOSAIC_SKILLS_PROFILES` | Defines a profile named `mvp-demo`. Its array is the complete allowlist of globally unique Skill names available through that profile. Every listed Skill must exist in the active Skill catalogue. |
-| `MOSAIC_SKILLS_DEFAULT_PROFILE_ID` | Selects `mvp-demo` when an ADA Session has no explicit profile assignment. |
-| `MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS` | Provides optional overrides from existing ADA Session IDs to profile IDs. `{}` means that the current configuration has no Session-specific overrides. It does not create ADA Sessions or Session IDs. |
+The existing discovery and loading limit environment variables remain in use.
+Deployment profile variables (`MOSAIC_SKILLS_PROFILES`,
+`MOSAIC_SKILLS_DEFAULT_PROFILE_ID`, and
+`MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS`) no longer authorize the normal
+agent. The legacy resolver remains available only when explicitly composed
+separately; it is never a fallback for workspace binding. Direct ADK dev-UI
+sessions without an enabled owner and public conversation metadata cannot bind
+workspace Skills. Use the authenticated public conversation API for the pilot.
 
-The resulting behaviour is:
-
-1. A client or the ADA development UI establishes an ADA Session ID.
-2. ADA exposes that existing ID to MOSAIC as part of the invocation context.
-3. MOSAIC looks for the ID in `MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS`.
-4. The current `{}` value contains no match, so MOSAIC uses the `mvp-demo`
-   fallback named by `MOSAIC_SKILLS_DEFAULT_PROFILE_ID`.
-5. MOSAIC looks up `mvp-demo` in `MOSAIC_SKILLS_PROFILES` and authorises the
-   Skills in its array for that Session.
-
-Consequently, every Session in the current demonstration receives the same
-`mvp-demo` Skill profile. The profile controls which Skills the Session may
-discover and load; it does not automatically load or execute every listed
-Skill.
-
-This is a temporary MVP mechanism tightly coupled to runtime deployment. It is
-managed by platform administrators rather than individual users, and it is not
-a replacement for authenticated identity, user or tenant ownership,
-resource-level authorisation, or a durable Skill profile service. A future
-trusted frontend and backend will establish and validate Session ownership and
-resolve Skill access from identity, workspace membership, and RBAC. Session IDs
-will be opaque routing references rather than proof of identity or permission.
-Changes to the temporary environment configuration require a MOSAIC runtime
-restart.
+An already-started Goal without a valid workspace binding fails closed rather
+than receiving new access midway through execution. Use a fresh conversation
+when moving an unfinished legacy session to this runtime.
 
 The MVP does not yet provide workspace-scoped Target visibility. Compatible
 Targets are derived from the Capabilities declared by loaded Skills and the

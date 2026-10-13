@@ -1,5 +1,3 @@
-"""Composed ADA callbacks for profile and goal orchestration policy."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -7,9 +5,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..skills.session_skill_profile_manager import SessionSkillProfileManager
-from .orchestration_transition_controller import (
-    OrchestrationTransitionController,
-)
+from .orchestration_transition_controller import OrchestrationTransitionController
 
 if TYPE_CHECKING:
     from google.adk.agents import Context
@@ -18,8 +14,6 @@ if TYPE_CHECKING:
 
 
 class MosaicAgentCallbacks(BaseModel):
-    """Apply trusted profile binding before existing goal transitions."""
-
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,
@@ -36,18 +30,16 @@ class MosaicAgentCallbacks(BaseModel):
         self,
         callback_context: Context,
     ) -> None:
-        """Bind the trusted profile before starting or resuming a goal.
-
-        Args:
-            callback_context: ADA callback context for the new invocation.
-
-        Raises:
-            ValueError: If the session identifier or profile is invalid.
-            ConcurrentSessionInvocationError: If another invocation remains
-                active for the session goal.
         """
-        self.profile_manager.ensure_profile(callback_context)
+        Start or resume the owned Goal before binding its immutable workspace Skills.
+
+        :param callback_context: ADA callback context for the new invocation.
+
+        :raises ValueError: If session ownership or the Skill snapshot is invalid.
+        :raises ConcurrentSessionInvocationError: If another invocation owns the Goal.
+        """
         self.orchestration_controller.before_agent_callback(callback_context)
+        self.profile_manager.ensure_profile(callback_context)
 
     def after_agent_callback(
         self,
@@ -85,9 +77,7 @@ class MosaicAgentCallbacks(BaseModel):
             ConcurrentSessionInvocationError: If the invocation is stale.
             pydantic.ValidationError: If ADK rejects the synthetic response.
         """
-        if not self.orchestration_controller.skill_discovery_required(
-            callback_context
-        ):
+        if not self.orchestration_controller.skill_discovery_required(callback_context):
             return None
 
         from google.adk.models import LlmResponse as AdkLlmResponse

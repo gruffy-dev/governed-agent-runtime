@@ -1,19 +1,15 @@
-"""Trusted environment configuration for session skill profiles."""
-
 import os
 import re
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
-from ...utilities.environment_configuration_reader import (
-    EnvironmentConfigurationReader,
-)
+from .skill_loading_configuration import SkillLoadingConfiguration
+
+from ...utilities.environment_configuration_reader import EnvironmentConfigurationReader
 
 
-class SessionSkillProfileConfiguration(BaseModel):
-    """Map trusted session identifiers to deployment-defined skill sets."""
-
+class SessionSkillProfileConfiguration(SkillLoadingConfiguration):
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,
@@ -45,42 +41,6 @@ class SessionSkillProfileConfiguration(BaseModel):
         ),
         description='Exact ADA session identifiers mapped to profile IDs.',
     )
-    maximum_enabled_skill_count: int = Field(
-        default_factory=lambda: EnvironmentConfigurationReader.read_positive_integer(
-            'MOSAIC_SKILLS_MAXIMUM_ENABLED_SKILL_COUNT',
-            50,
-        ),
-        description='Maximum skills authorised by one session profile.',
-        gt=0,
-        le=1000,
-    )
-    maximum_discovery_metadata_characters: int = Field(
-        default_factory=lambda: EnvironmentConfigurationReader.read_positive_integer(
-            'MOSAIC_SKILLS_MAXIMUM_DISCOVERY_METADATA_CHARACTERS',
-            20000,
-        ),
-        description='Maximum serialized discovery metadata per profile.',
-        gt=0,
-        le=1000000,
-    )
-    maximum_loaded_skill_count: int = Field(
-        default_factory=lambda: EnvironmentConfigurationReader.read_positive_integer(
-            'MOSAIC_SKILLS_MAXIMUM_LOADED_SKILL_COUNT',
-            10,
-        ),
-        description='Maximum complete skills loaded for one goal.',
-        gt=0,
-        le=100,
-    )
-    maximum_loaded_skill_characters: int = Field(
-        default_factory=lambda: EnvironmentConfigurationReader.read_positive_integer(
-            'MOSAIC_SKILLS_MAXIMUM_LOADED_SKILL_CHARACTERS',
-            50000,
-        ),
-        description='Maximum serialized full-skill content for one goal.',
-        gt=0,
-        le=2000000,
-    )
 
     @model_validator(mode='after')
     def validate_profile_configuration(self) -> Self:
@@ -98,13 +58,9 @@ class SessionSkillProfileConfiguration(BaseModel):
 
         for profile_id, skill_names in self.profiles.items():
             if re.fullmatch(identifier_pattern, profile_id) is None:
-                raise ValueError(
-                    'Profile identifiers must use lowercase kebab-case.'
-                )
+                raise ValueError('Profile identifiers must use lowercase kebab-case.')
             if len(skill_names) != len(set(skill_names)):
-                raise ValueError(
-                    f"Profile '{profile_id}' contains duplicate skills."
-                )
+                raise ValueError(f"Profile '{profile_id}' contains duplicate skills.")
             if any(
                 re.fullmatch(skill_name_pattern, skill_name) is None
                 for skill_name in skill_names
@@ -121,8 +77,7 @@ class SessionSkillProfileConfiguration(BaseModel):
                 raise ValueError('Session assignment IDs must not be empty.')
             if profile_id not in self.profiles:
                 raise ValueError(
-                    f"Session assignment references undefined profile "
-                    f"'{profile_id}'."
+                    f"Session assignment references undefined profile '{profile_id}'."
                 )
 
         return self

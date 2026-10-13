@@ -1,77 +1,34 @@
-"""ADA entry point for the MOSAIC Agent Runtime."""
-
 from ada_sdk.llm.gemini_ai_access_layer import GeminiViaAccessLayer
 from ada_sdk.registry.schemas import ModelConfig
 from google.adk import Agent
 
-from .components.capabilities.ada_mcp_capability_provider_invoker import (
-    AdaMcpCapabilityProviderInvoker,
-)
-from .components.capabilities.capability_catalogue_and_resolver import (
-    CapabilityCatalogueAndResolver,
-)
-from .components.capabilities.capability_discovery_service import (
-    CapabilityDiscoveryService,
-)
-from .components.capabilities.capability_provider_invoker_router import (
-    CapabilityProviderInvokerRouter,
-)
-from .components.capabilities.file_capability_runtime_snapshot_provider import (
-    FileCapabilityRuntimeSnapshotProvider,
-)
+from .components.capabilities.ada_mcp_capability_provider_invoker import AdaMcpCapabilityProviderInvoker
+from .components.capabilities.capability_catalogue_and_resolver import CapabilityCatalogueAndResolver
+from .components.capabilities.capability_discovery_service import CapabilityDiscoveryService
+from .components.capabilities.capability_provider_invoker_router import CapabilityProviderInvokerRouter
+from .components.capabilities.file_capability_runtime_snapshot_provider import FileCapabilityRuntimeSnapshotProvider
 from .components.capabilities.mcp_execution_gateway import MCPExecutionGateway
 from .components.capabilities.session_target_resolver import SessionTargetResolver
 from .components.orchestration.ada_session_target_context_store import AdaSessionTargetContextStore
-from .components.orchestration.goal_orchestration_tools import (
-    GoalOrchestrationTools,
-)
-from .components.orchestration.mosaic_agent_callbacks import (
-    MosaicAgentCallbacks,
-)
-from .components.orchestration.orchestration_transition_controller import (
-    OrchestrationTransitionController,
-)
-from .components.skills.git_skill_catalogue_provider import (
-    GitSkillCatalogueProvider,
-)
-from .components.skills.google_gen_ai_response_schema_adapter import (
-    GoogleGenAiResponseSchemaAdapter,
-)
-from .components.skills.session_skill_profile_manager import (
-    SessionSkillProfileManager,
-)
-from .components.skills.session_skill_profile_resolver import (
-    SessionSkillProfileResolver,
-)
-from .components.skills.skill_discovery_and_loader import (
-    SkillDiscoveryAndLoader,
-)
+from .components.orchestration.goal_orchestration_tools import GoalOrchestrationTools
+from .components.orchestration.mosaic_agent_callbacks import MosaicAgentCallbacks
+from .components.orchestration.orchestration_transition_controller import OrchestrationTransitionController
+from .components.skills.git_skill_catalogue_provider import GitSkillCatalogueProvider
+from .components.skills.google_gen_ai_response_schema_adapter import GoogleGenAiResponseSchemaAdapter
+from .components.skills.session_skill_profile_manager import SessionSkillProfileManager
+from .components.skills.workspace_skill_profile_resolver import WorkspaceSkillProfileResolver
+from .components.skills.skill_discovery_and_loader import SkillDiscoveryAndLoader
 from .components.skills.skill_package_parser import SkillPackageParser
-from .components.skills.structured_output_validator import (
-    StructuredOutputValidator,
-)
-from .interfaces.capabilities.capability_runtime_snapshot_provider_protocol import (
-    CapabilityRuntimeSnapshotProviderProtocol,
-)
-from .interfaces.skills.skill_catalogue_provider_protocol import (
-    SkillCatalogueProviderProtocol,
-)
-from .models.capabilities.capability_runtime_snapshot_configuration import (
-    CapabilityRuntimeSnapshotConfiguration,
-)
-from .models.skills.git_skill_catalogue_configuration import (
-    GitSkillCatalogueConfiguration,
-)
-from .models.skills.session_skill_profile_configuration import (
-    SessionSkillProfileConfiguration,
-)
-from .utilities.environment_configuration_reader import (
-    EnvironmentConfigurationReader,
-)
+from .components.skills.structured_output_validator import StructuredOutputValidator
+from .interfaces.capabilities.capability_runtime_snapshot_provider_protocol import CapabilityRuntimeSnapshotProviderProtocol
+from .interfaces.skills.skill_catalogue_provider_protocol import SkillCatalogueProviderProtocol
+from .models.capabilities.capability_runtime_snapshot_configuration import CapabilityRuntimeSnapshotConfiguration
+from .models.skills.git_skill_catalogue_configuration import GitSkillCatalogueConfiguration
+from .models.skills.skill_loading_configuration import SkillLoadingConfiguration
+from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
+from .utilities.environment_configuration_reader import EnvironmentConfigurationReader
 
-llm_proxy_url = EnvironmentConfigurationReader.read_required_string(
-    'LLM_PROXY_URL'
-)
+llm_proxy_url = EnvironmentConfigurationReader.read_required_string('LLM_PROXY_URL')
 agent_identifier = EnvironmentConfigurationReader.read_required_string(
     'AGENT_IDENTIFIER'
 )
@@ -84,15 +41,14 @@ access_layer_model = GeminiViaAccessLayer(
     )
 )
 
-skill_catalogue_provider: SkillCatalogueProviderProtocol = (
-    GitSkillCatalogueProvider(
-        configuration=GitSkillCatalogueConfiguration(),
-        package_parser=SkillPackageParser(),
-    )
+skill_catalogue_provider: SkillCatalogueProviderProtocol = GitSkillCatalogueProvider(
+    configuration=GitSkillCatalogueConfiguration(),
+    package_parser=SkillPackageParser(),
 )
 skill_catalogue_snapshot = skill_catalogue_provider.synchronize()
-session_skill_profile_resolver = SessionSkillProfileResolver(
-    configuration=SessionSkillProfileConfiguration(),
+session_skill_profile_resolver = WorkspaceSkillProfileResolver(
+    configuration=SkillLoadingConfiguration(),
+    database_configuration=MosaicDatabaseConfiguration(),
     catalogue_snapshot=skill_catalogue_snapshot,
 )
 session_skill_profile_manager = SessionSkillProfileManager(
@@ -107,10 +63,10 @@ structured_output_validator = StructuredOutputValidator(
     profile_manager=session_skill_profile_manager,
     response_schema_adapter=GoogleGenAiResponseSchemaAdapter(),
 )
-capability_runtime_snapshot_provider: (
-    CapabilityRuntimeSnapshotProviderProtocol
-) = FileCapabilityRuntimeSnapshotProvider(
-    configuration=CapabilityRuntimeSnapshotConfiguration(),
+capability_runtime_snapshot_provider: CapabilityRuntimeSnapshotProviderProtocol = (
+    FileCapabilityRuntimeSnapshotProvider(
+        configuration=CapabilityRuntimeSnapshotConfiguration(),
+    )
 )
 capability_runtime_snapshot = capability_runtime_snapshot_provider.load()
 session_target_context_store = AdaSessionTargetContextStore()
@@ -153,7 +109,7 @@ root_agent = Agent(
         'A general enterprise agent that uses its general knowledge and '
         'applies approved skills and capabilities when relevant.'
     ),
-    instruction='''
+    instruction="""
 You are MOSAIC, a general enterprise agent.
 
 Interpret the user's goal and work towards an appropriate outcome. Use your
@@ -293,7 +249,7 @@ Follow these operating rules:
    skill specifies an output form, choose one appropriate to the user's goal.
    Communicate relevant assumptions, limitations, and uncertainty when
    applicable.
-'''.strip(),
+""".strip(),
     tools=[
         skill_discovery_and_loader.discover_skills,
         skill_discovery_and_loader.load_skills,
@@ -306,19 +262,9 @@ Follow these operating rules:
         mosaic_agent_callbacks.before_model_callback,
         structured_output_validator.before_model_callback,
     ],
-    before_agent_callback=(
-        mosaic_agent_callbacks.before_agent_callback
-    ),
-    after_model_callback=(
-        mosaic_agent_callbacks.after_model_callback
-    ),
-    after_agent_callback=(
-        mosaic_agent_callbacks.after_agent_callback
-    ),
-    before_tool_callback=(
-        mosaic_agent_callbacks.before_tool_callback
-    ),
-    after_tool_callback=(
-        mosaic_agent_callbacks.after_tool_callback
-    ),
+    before_agent_callback=(mosaic_agent_callbacks.before_agent_callback),
+    after_model_callback=(mosaic_agent_callbacks.after_model_callback),
+    after_agent_callback=(mosaic_agent_callbacks.after_agent_callback),
+    before_tool_callback=(mosaic_agent_callbacks.before_tool_callback),
+    after_tool_callback=(mosaic_agent_callbacks.after_tool_callback),
 )
