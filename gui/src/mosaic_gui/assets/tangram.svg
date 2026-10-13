@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="MOSAIC modular M tangram">
+  <defs>
+    <linearGradient id="left-primary" x2="1" y2="1"><stop stop-color="#1e2a78"/><stop offset="1" stop-color="#1e2a78"/></linearGradient>
+    <linearGradient id="right-strong" x2="1" y2="1"><stop stop-color="#16205d"/><stop offset="1" stop-color="#16205d"/></linearGradient>
+    <linearGradient id="soft" x2="1" y2="1"><stop stop-color="#e7eaf7"/><stop offset="1" stop-color="#ccd4f0"/></linearGradient>
+  </defs>
+  <g id="left-half" fill="url(#left-primary)">
+    <polygon points="18,4 49,25 49,44 18,24"/>
+    <polygon points="3,33 16,24 16,95 3,85"/>
+    <polygon fill="url(#soft)" points="18,28 35,40 35,63 18,51"/>
+    <polygon points="18,54 35,66 35,83 18,95"/>
+  </g>
+  <g id="right-half" fill="url(#right-strong)">
+    <polygon points="51,25 82,4 82,24 51,44"/>
+    <polygon fill="url(#soft)" points="82,28 65,40 65,63 82,51"/>
+    <polygon points="82,54 65,66 65,83 82,95"/>
+    <polygon points="84,24 97,33 97,85 84,95"/>
+  </g>
+</svg>

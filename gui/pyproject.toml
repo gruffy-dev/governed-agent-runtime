@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mosaic-workspace-gui"
+version = "0.1.0"
+description = "Independent browser workspace for the MOSAIC public API"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "dash>=3.0.4,<4",
+    "dash-bootstrap-components>=2,<3",
+    "pydantic>=2.10,<3",
+    "waitress>=3,<4",
+]
+
+[project.scripts]
+mosaic-gui = "mosaic_gui.gui_application:GuiApplication.run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mosaic_gui = ["assets/*.css", "assets/*.mjs", "assets/*.svg", "assets/*.txt"]

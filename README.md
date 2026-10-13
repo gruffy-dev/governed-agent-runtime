@@ -604,6 +604,12 @@ tenancy, RBAC, and frontend services.
 
 #### Separate GUI browser access
 
+The independent Dash/Bootstrap GUI is in `gui/`. Copy that folder unchanged to
+its own repository if required; it has its own package, pinned dependencies,
+entrypoint, assets and tests. See `gui/README.txt` for installation and private
+logo configuration. The GUI does not import the orchestrator or access its
+databases, and it is not mounted into the backend.
+
 Configure `MOSAIC_BROWSER_ALLOWED_ORIGINS` as a JSON array of exact trusted GUI
 origins. The default is `[]`: no browser-origin access is enabled. For a GUI
 running locally on port 8050, use:

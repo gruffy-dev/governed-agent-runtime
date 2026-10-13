@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env
+.env.*
+private-branding/
+*.png
+.git/
+.DS_Store
+tests/
+build/
+dist/
+*.egg-info/
