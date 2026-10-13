@@ -136,6 +136,7 @@ class Backend:
         from .components.api.conversation_api_documentation import ConversationApiDocumentation
         from .components.api.conversation_api import ConversationApi
         from .components.api.conversation_api_failure_handler import ConversationApiFailureHandler
+        from .components.api.user_workspace_api import UserWorkspaceApi
 
         try:
             if application_configurer is not None:
@@ -154,6 +155,9 @@ class Backend:
             if conversation_projection_configuration is None:
                 conversation_projection_configuration = ConversationProjectionConfiguration()
             ConversationApiFailureHandler().register(application)
+            UserWorkspaceApi(
+                runtime_database, context_dependency, skill_catalogue_snapshot
+            ).register_routes(application)
             ConversationApi(
                 runtime_database, context_dependency, conversation_projection_configuration,
                 ada_adapter_configuration,

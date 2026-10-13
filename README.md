@@ -604,6 +604,19 @@ tenancy, RBAC, and frontend services.
 
 #### Pilot workspace Skill binding
 
+The authenticated, read-only `GET /api/v1/workspace` endpoint returns the
+signed-in user, workspace identifier and assignment version, plus current
+assigned Skill labels, descriptions, kinds and catalogue group paths. It
+accepts no ownership selector and returns `Cache-Control: no-store`.
+Missing or empty workspaces return an empty Skill list; withdrawn catalogue
+references are omitted. Executable instructions, output schemas, capability
+declarations and credentials are never included. There is no public workspace
+editing route; administrators retain control of assignments.
+
+This endpoint describes current workspace assignments, not the immutable Skill
+snapshot of an already-active Goal. The independent GUI can use it after sign-in
+to populate its identity and read-only Skills panel.
+
 The normal agent obtains its Skill allowlist from the authenticated user's
 workspace in `mosaic.db`. Administrators manage these assignments using
 `mosaic-admin`; the browser does not grant or modify access.
