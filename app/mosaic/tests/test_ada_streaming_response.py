@@ -218,6 +218,7 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version):
                 private_closed = asyncio.Event()
                 first_sent = asyncio.Event()
+                finalised: list[bool] = []
                 private = FastAPI()
 
                 async def events(
@@ -237,8 +238,16 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                     private,
                     AdaApplicationAdapterConfiguration(asgi_spec_version=version),
                 )
+                async def on_close(
+                    normal_eof: bool,
+                    private_closed: asyncio.Event = private_closed,
+                    finalised: list[bool] = finalised,
+                ) -> None:
+                    self.assertTrue(private_closed.is_set())
+                    finalised.append(normal_eof)
+
                 response = await AdaStreamingResponse.create(
-                    transport.stream_response('POST', '/run_sse'), 8192, 'mosaic'
+                    transport.stream_response('POST', '/run_sse'), 8192, 'mosaic', on_close
                 )
 
                 async def receive(first_sent: asyncio.Event = first_sent) -> Message:
@@ -265,11 +274,13 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                 else:
                     await asyncio.wait_for(response(scope, receive, send), 2)
                 await asyncio.wait_for(private_closed.wait(), 2)
+                self.assertEqual(finalised, [False])
 
     async def test_browser_gets_first_event_before_private_completion(self) -> None:
         gate = asyncio.Event()
         first_sent = asyncio.Event()
         captured: list[bytes] = []
+        finalised: list[bool] = []
 
         async def stream() -> AsyncGenerator[Message, None]:
             yield {
@@ -288,7 +299,10 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                 'body': self._frame(dict(self.record, partial=False)),
             }
 
-        response = await AdaStreamingResponse.create(stream(), 8192, 'mosaic')
+        async def on_close(normal_eof: bool) -> None:
+            finalised.append(normal_eof)
+
+        response = await AdaStreamingResponse.create(stream(), 8192, 'mosaic', on_close)
 
         async def receive() -> Message:
             await asyncio.Event().wait()
@@ -309,6 +323,7 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
             gate.set()
             await asyncio.wait_for(task, 2)
             self.assertEqual(len(captured), 2)
+            self.assertEqual(finalised, [True])
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)

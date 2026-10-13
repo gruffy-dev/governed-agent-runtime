@@ -12,6 +12,7 @@ class ApiErrorResponse(BaseModel):
         'invalid_request',
         'conversation_not_found',
         'conversation_busy',
+        'conversation_interrupted',
         'internal_error',
         'invocation_failed',
     ] = Field(

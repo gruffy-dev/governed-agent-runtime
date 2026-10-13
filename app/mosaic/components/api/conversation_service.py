@@ -5,8 +5,10 @@ from starlette.concurrency import run_in_threadpool
 
 from .conversation_not_found_error import ConversationNotFoundError
 from .conversation_session_projector import ConversationSessionProjector
+from .conversation_unavailable_error import ConversationUnavailableError
 from ..ada.ada_application_error import AdaApplicationError
 from ..ada.ada_session_api import AdaSessionApi
+from ..orchestration.orchestration_transition_controller import OrchestrationTransitionController
 from ..persistence.conversation_metadata_repository import ConversationMetadataRepository
 from ..persistence.mosaic_database import MosaicDatabase
 from ...models.api.conversation_detail import ConversationDetail
@@ -85,27 +87,62 @@ class ConversationService:
             if error.status_code == 404:
                 raise ConversationNotFoundError() from None
             raise
-        return self._projector.detail(complete, created_at=created_at)
+        detail = self._projector.detail(complete, created_at=created_at)
+        flags = await run_in_threadpool(self._availability, context, conversation_id)
+        if flags is None:
+            raise ConversationNotFoundError()
+        return detail.model_copy(
+            update={'can_continue': flags[0], 'is_interrupted': flags[1]}
+        )
 
-    async def require_owned_metadata(
+    async def begin_invocation(
         self,
         context: TrustedRequestContext,
         conversation_id: UUID,
     ) -> None:
         """
-        Require owned metadata before the invocation adapter verifies the ADA session.
-
-        Do not fetch or project historical messages merely to submit a new one.
+        Reserve an owned conversation or reject it before any private execution.
 
         :param context: Server-derived application and user identity.
         :param conversation_id: Validated conversation routing reference.
 
-        :raises ConversationNotFoundError: If owned creation metadata is absent.
-        :raises SQLAlchemyError: If metadata cannot be read.
+        :raises ConversationNotFoundError: If owned metadata is absent.
+        :raises ConversationUnavailableError: If reserved or interrupted.
         """
-        created_at = await run_in_threadpool(self._creation_time, context, conversation_id)
-        if created_at is None:
-            raise ConversationNotFoundError()
+        await run_in_threadpool(self._begin_invocation, context, conversation_id)
+
+    async def finish_invocation(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+        normal_eof: bool,
+    ) -> None:
+        """
+        Retain history and mark stopped work unavailable unless completion is saved.
+
+        Call exactly once, only after private stream closure has completed. Do not
+        alter ADA state or infer liveness from its persisted planning phase.
+
+        :param context: Server-derived application and user identity.
+        :param conversation_id: Conversation reserved by this response.
+        :param normal_eof: Whether the entire private stream ended without error.
+        """
+        completed = False
+        if normal_eof:
+            try:
+                session = await self._sessions.get(context, conversation_id)
+                state = session.get('state', {}).get(
+                    OrchestrationTransitionController().state_key, {}
+                )
+                completed = state.get('phase') in (
+                    'completed',
+                    'awaiting_clarification',
+                )
+            except (AdaApplicationError, AttributeError, TypeError):
+                completed = False
+        await run_in_threadpool(
+            self._finish_invocation, context, conversation_id, not completed
+        )
 
     async def list(self, context: TrustedRequestContext) -> ConversationListResponse:
         """
@@ -131,7 +168,11 @@ class ConversationService:
                 detail = await self.get(context, conversation_id)
             except ConversationNotFoundError:
                 continue
-            summaries.append(ConversationSummary.model_validate(detail.model_dump(exclude={'messages'})))
+            summaries.append(
+                ConversationSummary.model_validate(
+                    detail.model_dump(exclude={'messages'})
+                )
+            )
         return ConversationListResponse(
             conversations=tuple(
                 sorted(
@@ -160,6 +201,60 @@ class ConversationService:
         with self._database.create_session() as session, session.begin():
             ConversationMetadataRepository(session).add(
                 context, conversation_id, created_at
+            )
+
+    def _availability(
+        self, context: TrustedRequestContext, conversation_id: UUID
+    ) -> tuple[bool, bool] | None:
+        """
+        Read owned availability without exposing reservation or SDK internals.
+
+        :param context: Trusted conversation owner.
+        :param conversation_id: Validated routing reference.
+
+        :return: Continuation and interruption flags, or None for absent metadata.
+        """
+        with self._database.create_session() as session:
+            return ConversationMetadataRepository(session).get_availability(
+                context, conversation_id
+            )
+
+    def _begin_invocation(
+        self, context: TrustedRequestContext, conversation_id: UUID
+    ) -> None:
+        """
+        Commit a conditional database reservation in a short worker transaction.
+
+        :param context: Trusted conversation owner.
+        :param conversation_id: Validated routing reference.
+
+        :raises ConversationNotFoundError: If owned metadata is absent.
+        :raises ConversationUnavailableError: If the reservation cannot be acquired.
+        """
+        with self._database.create_session() as session, session.begin():
+            repository = ConversationMetadataRepository(session)
+            if not repository.begin_invocation(context, conversation_id):
+                flags = repository.get_availability(context, conversation_id)
+                if flags is None:
+                    raise ConversationNotFoundError()
+                raise ConversationUnavailableError(is_interrupted=flags[1])
+
+    def _finish_invocation(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+        is_interrupted: bool,
+    ) -> None:
+        """
+        Persist availability without modifying or deleting historical messages.
+
+        :param context: Trusted conversation owner.
+        :param conversation_id: Routing reference reserved by the calling response.
+        :param is_interrupted: Whether the stopped invocation prevents continuation.
+        """
+        with self._database.create_session() as session, session.begin():
+            ConversationMetadataRepository(session).finish_invocation(
+                context, conversation_id, is_interrupted=is_interrupted
             )
 
     def _creation_time(

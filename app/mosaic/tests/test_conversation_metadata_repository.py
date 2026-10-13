@@ -47,7 +47,7 @@ class TestConversationMetadataRepository(unittest.TestCase):
                 column['name']
                 for column in inspector.get_columns('conversation_metadata')
             },
-            {'conversation_id', 'app_name', 'user_id', 'created_at'},
+            {'conversation_id', 'app_name', 'user_id', 'created_at', 'invocation_in_progress', 'is_interrupted'},
         )
         self.assertEqual(
             inspector.get_pk_constraint('conversation_metadata')['constrained_columns'],
@@ -140,6 +140,65 @@ class TestConversationMetadataRepository(unittest.TestCase):
                     self.conversation_id,
                     self.created_at,
                 )
+
+    def test_reservation_is_conditional_and_interruption_is_permanent(self) -> None:
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationMetadataRepository(session)
+            repository.add(self.context, self.conversation_id, self.created_at)
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (True, False))
+            self.assertTrue(repository.begin_invocation(self.context, self.conversation_id))
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationMetadataRepository(session)
+            self.assertFalse(repository.begin_invocation(self.context, self.conversation_id))
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (False, False))
+            repository.finish_invocation(self.context, self.conversation_id, is_interrupted=True)
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (False, True))
+            self.assertFalse(repository.begin_invocation(self.context, self.conversation_id))
+            repository.finish_invocation(self.context, self.conversation_id, is_interrupted=False)
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (False, True))
+
+    def test_foreign_owner_cannot_reserve_or_finalise(self) -> None:
+        foreign = TrustedRequestContext(app_name=self.context.app_name, user_id='another-synthetic-user')
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationMetadataRepository(session)
+            repository.add(self.context, self.conversation_id, self.created_at)
+            self.assertIsNone(repository.get_availability(foreign, self.conversation_id))
+            self.assertFalse(repository.begin_invocation(foreign, self.conversation_id))
+            self.assertTrue(repository.begin_invocation(self.context, self.conversation_id))
+            repository.finish_invocation(foreign, self.conversation_id, is_interrupted=False)
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (False, False))
+            repository.finish_invocation(self.context, self.conversation_id, is_interrupted=False)
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (True, False))
+
+    def test_existing_conversation_upgrade_preserves_metadata_and_boolean_defaults(self) -> None:
+        with self.database.create_session() as session, session.begin():
+            ConversationMetadataRepository(session).add(self.context, self.conversation_id, self.created_at)
+        configuration = Config()
+        configuration.set_main_option('script_location', str(Path(migrations.__file__).parent))
+        with self.database.engine.begin() as connection:
+            configuration.attributes['connection'] = connection
+            command.downgrade(configuration, '0004_conversation_metadata')
+        self.assertNotIn('is_interrupted', {column['name'] for column in inspect(self.database.engine).get_columns('conversation_metadata')})
+        MosaicDatabaseMigrator(self.database).upgrade()
+        with self.database.create_session() as session:
+            repository = ConversationMetadataRepository(session)
+            self.assertEqual(repository.get_created_at(self.context, self.conversation_id), self.created_at.astimezone(UTC))
+            self.assertEqual(repository.get_availability(self.context, self.conversation_id), (True, False))
+
+    def test_unfinalised_reservation_survives_restart_without_being_reclaimed(self) -> None:
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationMetadataRepository(session)
+            repository.add(self.context, self.conversation_id, self.created_at)
+            self.assertTrue(repository.begin_invocation(self.context, self.conversation_id))
+        self.database.dispose()
+        restarted = MosaicDatabase(self.configuration)
+        try:
+            with restarted.create_session() as session, session.begin():
+                repository = ConversationMetadataRepository(session)
+                self.assertEqual(repository.get_availability(self.context, self.conversation_id), (False, False))
+                self.assertFalse(repository.begin_invocation(self.context, self.conversation_id))
+        finally:
+            restarted.dispose()
 
     def test_caller_rollback_does_not_persist_metadata(self) -> None:
         with self.database.create_session() as session:

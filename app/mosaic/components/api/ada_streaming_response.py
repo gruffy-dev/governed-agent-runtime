@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any, Self
 
 import anyio
@@ -15,6 +15,7 @@ class AdaStreamingResponse(StreamingResponse):
         stream: AsyncGenerator[Message, None],
         maximum_event_bytes: int,
         public_agent_name: str,
+        on_close: Callable[[bool], Awaitable[None]] | None = None,
     ) -> None:
         """
         Relay ADK text events without reconciling partial and final answers.
@@ -22,10 +23,14 @@ class AdaStreamingResponse(StreamingResponse):
         :param stream: Private stream whose successful headers were checked.
         :param maximum_event_bytes: Existing transport bound applied per SSE frame.
         :param public_agent_name: Agent allowed to supply browser-visible text.
+        :param on_close: Optional availability finaliser called once after private cleanup.
         """
         self._stream = stream
         self._maximum_event_bytes = maximum_event_bytes
         self._public_agent_name = public_agent_name
+        self._on_close = on_close
+        self._normal_eof = False
+        self._failed = False
         self._body_stream = self._body()
         super().__init__(
             self._body_stream,
@@ -42,6 +47,7 @@ class AdaStreamingResponse(StreamingResponse):
         stream: AsyncGenerator[Message, None],
         maximum_event_bytes: int,
         public_agent_name: str,
+        on_close: Callable[[bool], Awaitable[None]] | None = None,
     ) -> Self:
         """
         Check private HTTP success and content type before committing public headers.
@@ -49,6 +55,7 @@ class AdaStreamingResponse(StreamingResponse):
         :param stream: Owned private invocation iterator, closed on preparation failure.
         :param maximum_event_bytes: Maximum retained SSE frame size.
         :param public_agent_name: Configured public assistant author.
+        :param on_close: Availability finaliser for this response's owned reservation.
 
         :return: Browser-owned streaming response with ADK data framing.
 
@@ -66,7 +73,7 @@ class AdaStreamingResponse(StreamingResponse):
                 raise AdaApplicationError(
                     'Private execution did not start an SSE response.'
                 )
-            return cls(stream, maximum_event_bytes, public_agent_name)
+            return cls(stream, maximum_event_bytes, public_agent_name, on_close)
         except BaseException:
             with anyio.CancelScope(shield=True):
                 await stream.aclose()
@@ -85,7 +92,22 @@ class AdaStreamingResponse(StreamingResponse):
         finally:
             with anyio.CancelScope(shield=True):
                 await self._body_stream.aclose()
-                await self._stream.aclose()
+                await self._close()
+
+    async def _close(self) -> None:
+        """
+        Finalise availability once after private cleanup and before clean public EOF.
+
+        The outer response also calls this if sending headers or body fails.
+        Shield cleanup from the browser's cancellation scope; do not continue
+        model execution or reclaim another request's reservation.
+        """
+        with anyio.CancelScope(shield=True):
+            await self._stream.aclose()
+            on_close = self._on_close
+            self._on_close = None
+            if on_close is not None:
+                await on_close(self._normal_eof and not self._failed)
 
     async def _body(self) -> AsyncGenerator[bytes, None]:
         """
@@ -101,11 +123,11 @@ class AdaStreamingResponse(StreamingResponse):
                 frame = self._public_frame(record)
                 if frame is not None:
                     yield frame
+            self._normal_eof = True
         except Exception:  # noqa: BLE001 - private diagnostics must not reach browsers.
             yield b'data: {"error":"Invocation failed"}\n\n'
         finally:
-            with anyio.CancelScope(shield=True):
-                await self._stream.aclose()
+            await self._close()
 
     async def _records(self) -> AsyncIterator[dict[str, Any]]:
         """
@@ -170,6 +192,8 @@ class AdaStreamingResponse(StreamingResponse):
             for key in ('error', 'error_details', 'errorCode', 'errorMessage')
         ):
             raise ValueError('Private execution failed.')
+        if record.get('interrupted') or record.get('finishReason') not in (None, 'STOP'):
+            self._failed = True
         content = record.get('content')
         if (
             record.get('author') != self._public_agent_name

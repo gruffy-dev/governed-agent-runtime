@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .conversation_metadata_record import ConversationMetadataRecord
@@ -86,6 +86,96 @@ class ConversationMetadataRepository:
         if created_at.tzinfo is None:
             return created_at.replace(tzinfo=UTC)
         return created_at.astimezone(UTC)
+
+    def get_availability(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+    ) -> tuple[bool, bool] | None:
+        """
+        Read continuation permission and interruption within the trusted owner scope.
+
+        :param context: Trusted application and user identity.
+        :param conversation_id: Validated conversation routing UUID.
+
+        :return: Tuple of can_continue and is_interrupted, or None for missing/foreign metadata.
+        """
+        self._validate_id(conversation_id)
+        flags = self._session.execute(
+            select(
+                ConversationMetadataRecord.invocation_in_progress,
+                ConversationMetadataRecord.is_interrupted,
+            ).where(
+                ConversationMetadataRecord.conversation_id == str(conversation_id),
+                ConversationMetadataRecord.app_name == context.app_name,
+                ConversationMetadataRecord.user_id == context.user_id,
+            )
+        ).one_or_none()
+        if flags is None:
+            return None
+        return (
+            not flags.invocation_in_progress and not flags.is_interrupted,
+            flags.is_interrupted,
+        )
+
+    def begin_invocation(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+    ) -> bool:
+        """
+        Atomically reserve an available owned conversation before private dispatch.
+
+        Do not reclaim an existing reservation, including after a process crash.
+
+        :param context: Trusted application and user identity.
+        :param conversation_id: Validated conversation routing UUID.
+
+        :return: True only when this transaction acquired the reservation.
+        """
+        self._validate_id(conversation_id)
+        result = self._session.execute(
+            update(ConversationMetadataRecord)
+            .where(
+                ConversationMetadataRecord.conversation_id == str(conversation_id),
+                ConversationMetadataRecord.app_name == context.app_name,
+                ConversationMetadataRecord.user_id == context.user_id,
+                ConversationMetadataRecord.invocation_in_progress.is_(False),
+                ConversationMetadataRecord.is_interrupted.is_(False),
+            )
+            .values(invocation_in_progress=True)
+        )
+        return result.rowcount == 1
+
+    def finish_invocation(
+        self,
+        context: TrustedRequestContext,
+        conversation_id: UUID,
+        *,
+        is_interrupted: bool,
+    ) -> None:
+        """
+        Finalise the caller's reservation after private execution has stopped.
+
+        An interrupted conversation cannot be made available by later completion.
+        The caller must invoke this exactly once per acquired reservation.
+
+        :param context: Trusted application and user identity.
+        :param conversation_id: Validated conversation routing UUID.
+        :param is_interrupted: True unless normal durable completion was confirmed.
+        """
+        self._validate_id(conversation_id)
+        self._session.execute(
+            update(ConversationMetadataRecord)
+            .where(
+                ConversationMetadataRecord.conversation_id == str(conversation_id),
+                ConversationMetadataRecord.app_name == context.app_name,
+                ConversationMetadataRecord.user_id == context.user_id,
+                ConversationMetadataRecord.invocation_in_progress.is_(True),
+                ConversationMetadataRecord.is_interrupted.is_(False),
+            )
+            .values(invocation_in_progress=False, is_interrupted=is_interrupted)
+        )
 
     @staticmethod
     def _validate_id(conversation_id: UUID) -> None:

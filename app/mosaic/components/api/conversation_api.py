@@ -1,7 +1,9 @@
+from functools import partial
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
+import anyio
 
 from .ada_streaming_response import AdaStreamingResponse
 from .conversation_api_audit import ConversationApiAudit
@@ -138,7 +140,8 @@ class ConversationApi:
 
             :return: Incremental response whose disconnect closes private execution.
             """
-            await self._service(request).require_owned_metadata(context, conversation_id)
+            service = self._service(request)
+            await service.begin_invocation(context, conversation_id)
             stream = AdaInvocationApi(request.app.state.ada_transport).stream(
                 context, conversation_id, body
             )
@@ -147,9 +150,12 @@ class ConversationApi:
                     stream,
                     self._adapter_configuration.maximum_response_bytes,
                     self._public_agent_name,
+                    partial(service.finish_invocation, context, conversation_id),
                 )
-            except AdaApplicationError as error:
-                if error.status_code == 404:
+            except BaseException as error:
+                with anyio.CancelScope(shield=True):
+                    await service.finish_invocation(context, conversation_id, False)
+                if isinstance(error, AdaApplicationError) and error.status_code == 404:
                     raise ConversationNotFoundError() from None
                 raise
             response.headers['X-Correlation-ID'] = str(self._audit.completed(context, 'submit', 200))

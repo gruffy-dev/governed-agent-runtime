@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from .conversation_not_found_error import ConversationNotFoundError
+from .conversation_unavailable_error import ConversationUnavailableError
 from ..ada.ada_application_error import AdaApplicationError
 from ...models.api.api_error_response import ApiErrorResponse
 
@@ -28,6 +29,7 @@ class ConversationApiFailureHandler:
         """
         for error in (
             ConversationNotFoundError,
+            ConversationUnavailableError,
             AdaApplicationError,
             SQLAlchemyError,
             Exception,
@@ -44,8 +46,10 @@ class ConversationApiFailureHandler:
         :param request: Request excluded from logging.
         :param error: Typed failure used only to choose missing or internal status.
 
-        :return: Correlated no-store 404 or 500 response.
+        :return: Correlated no-store 404, 409 or 500 response.
         """
+        if isinstance(error, ConversationUnavailableError):
+            return self._response(409, is_interrupted=error.is_interrupted)
         return self._response(
             404 if isinstance(error, ConversationNotFoundError) else 500
         )
@@ -69,11 +73,12 @@ class ConversationApiFailureHandler:
             return self._response(400)
         return await request_validation_exception_handler(request, error)
 
-    def _response(self, status_code: int) -> JSONResponse:
+    def _response(self, status_code: int, *, is_interrupted: bool = False) -> JSONResponse:
         """
         Log allowlisted failure metadata and produce the matching public envelope.
 
         :param status_code: Internal selected validation, missing or failure status.
+        :param is_interrupted: Whether a 409 requires a fresh conversation, not waiting.
 
         :return: Response with matching body, log and header correlation ID.
         """
@@ -92,6 +97,12 @@ class ConversationApiFailureHandler:
                 'Request failed',
                 'internal_error',
                 'Try again or contact the administrator.',
+            ),
+            409: (
+                'Interrupted — cannot continue' if is_interrupted else 'Conversation is unavailable',
+                'conversation_interrupted' if is_interrupted else 'conversation_busy',
+                'Start a new conversation. Saved history remains readable.' if is_interrupted
+                else 'A previous response has not been finalised. Wait or start a new conversation.',
             ),
         }[status_code]
         envelope = ApiErrorResponse(

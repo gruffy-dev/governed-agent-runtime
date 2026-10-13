@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from mosaic.models.api.conversation_detail import ConversationDetail
 from mosaic.models.api.conversation_message import ConversationMessage
 from mosaic.models.api.create_conversation_request import CreateConversationRequest
+from mosaic.models.api.conversation_summary import ConversationSummary
 from mosaic.models.api.invocation_status import InvocationStatus
 from mosaic.models.api.submit_message_request import SubmitMessageRequest
 
@@ -20,6 +21,8 @@ class TestConversationApiModels(unittest.TestCase):
             'state',
             'skill_ids',
             'conversation_id',
+            'can_continue',
+            'is_interrupted',
         ):
             with self.subTest(field=field):
                 with self.assertRaises(ValidationError):
@@ -73,6 +76,16 @@ class TestConversationApiModels(unittest.TestCase):
             )
         with self.assertRaises(ValidationError):
             conversation.title = 'Another title'
+
+    def test_interrupted_conversations_cannot_advertise_continuation(self) -> None:
+        fields = {
+            'conversation_id': uuid4(), 'title': None,
+            'created_at': datetime.now(UTC), 'last_activity_at': datetime.now(UTC),
+        }
+        summary = ConversationSummary(**fields, can_continue=False, is_interrupted=True)
+        self.assertFalse(summary.can_continue)
+        with self.assertRaises(ValidationError):
+            ConversationSummary(**fields, can_continue=True, is_interrupted=True)
 
     def test_idle_and_active_status_have_consistent_identifiers(self) -> None:
         conversation_id = uuid4()

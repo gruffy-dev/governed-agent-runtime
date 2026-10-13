@@ -35,3 +35,9 @@ class ConversationMetadataRecord(MosaicDatabaseRecord):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False
     )
+    invocation_in_progress: Mapped[bool] = mapped_column(
+        sa.Boolean(), nullable=False, default=False, server_default=sa.false()
+    )
+    is_interrupted: Mapped[bool] = mapped_column(
+        sa.Boolean(), nullable=False, default=False, server_default=sa.false()
+    )

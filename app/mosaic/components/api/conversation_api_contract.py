@@ -105,6 +105,7 @@ class ConversationApiContract:
                 '401': 'unauthorized',
                 '403': 'forbidden',
                 '404': 'conversation_not_found',
+                '409': ['conversation_busy', 'conversation_interrupted'],
                 '500': 'internal_error',
             },
             'x-mosaic-authentication-examples': [
@@ -203,6 +204,10 @@ class ConversationApiContract:
                 'Conversation unavailable; foreign IDs are not disclosed.',
             )
         if streaming:
+            responses['409'] = self._response(
+                ApiErrorResponse,
+                'Conversation is reserved or interrupted; no new execution is dispatched. Interrupted history remains readable.',
+            )
             operation['x-mosaic-sse'] = {
                 'format': 'ADK',
                 'framing': 'data: <ADK JSON record>\n\n',
@@ -211,7 +216,8 @@ class ConversationApiContract:
                 'disconnect': 'Stop private execution. Do not reconstruct or resume an interrupted response.',
                 'reconnection': 'Reload saved conversation history; no stream replay.',
                 'privacy': 'Only the configured assistant text and answer metadata are relayed. No thoughts, signatures, tools, state or diagnostic details.',
-                'concurrency': 'No HTTP same-conversation concurrency guarantee is provided. Submit one message at a time.',
+                'availability': 'Use can_continue and is_interrupted from list/get. Interrupted conversations are read-only: disable input, show Interrupted — cannot continue, and offer a new conversation.',
+                'concurrency': 'A conditional metadata reservation rejects overlapping public submissions. Existing reservations are never automatically reclaimed after a crash.',
             }
             responses[str(success_status)]['headers']['X-Accel-Buffering'] = {
                 'description': 'Disable intermediary buffering.',

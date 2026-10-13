@@ -12,14 +12,17 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
+from starlette.types import Message
 
 from mosaic.backend import Backend
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
+from mosaic.components.persistence.conversation_metadata_repository import ConversationMetadataRepository
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
 from mosaic.models.identity.trusted_request_configuration import TrustedRequestConfiguration
+from mosaic.models.identity.trusted_request_context import TrustedRequestContext
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
 
 
@@ -113,9 +116,10 @@ class TestConversationApi(unittest.TestCase):
         self.assertEqual(UUID(response.headers['X-Correlation-ID']).version, 4)
         return response.json()
 
-    def _install_stream(self, *, fail: bool = False, reject: bool = False) -> None:
+    def _install_stream(self, *, fail: bool = False, reject: bool = False, phase: str = 'completed', block: bool = False) -> None:
         self.invocations: list[dict[str, Any]] = []
         self.private_headers: list[dict[str, str]] = []
+        self.private_stream_closed = False
 
         @self.private.post('/run_sse')
         async def run(request: Request) -> StreamingResponse:
@@ -132,12 +136,30 @@ class TestConversationApi(unittest.TestCase):
                     'partial': True,
                     'content': {'role': 'model', 'parts': [{'text': 'Hello'}]},
                 }
+                if block:
+                    payload = self.invocations[-1]
+                    stored = self.records[(payload['app_name'], payload['user_id'], payload['session_id'])]
+                    stored['state']['mosaic:orchestration'] = {'phase': 'planning'}
+                    stored['events'].append({
+                        'id': 'synthetic-prompt', 'author': 'user', 'timestamp': time.time(),
+                        'content': payload['new_message'],
+                    })
+                    try:
+                        yield b'data: ' + json.dumps(record).encode() + b'\n\n'
+                        await asyncio.Event().wait()
+                    finally:
+                        self.private_stream_closed = True
+                    return
                 yield b'data: ' + json.dumps(record).encode() + b'\n\n'
                 if fail:
                     yield b'data: {"error":"synthetic-private-detail"}\n\n'
                 else:
                     record['partial'] = False
                     yield b'data: ' + json.dumps(record).encode() + b'\n\n'
+                    payload = self.invocations[-1]
+                    self.records[(payload['app_name'], payload['user_id'], payload['session_id'])]['state']['mosaic:orchestration'] = {'phase': phase}
+
+                self.private_stream_closed = True
 
             return StreamingResponse(events(), media_type='text/event-stream')
 
@@ -190,6 +212,118 @@ class TestConversationApi(unittest.TestCase):
             self.assertEqual(response.json()['error_code'], 'conversation_not_found')
         self.assertEqual(self.invocations, [])
         self.assertEqual(self.calls, [])
+
+    def test_failed_conversation_is_read_only_and_flags_survive_restart(self) -> None:
+        self._install_stream(fail=True)
+        created = self._create()
+        path = f'/api/v1/conversations/{created["conversation_id"]}'
+        response = self.client.post(path + '/messages', headers=self.headers, json={'text': 'Hello'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.private_stream_closed)
+        with TestClient(self._backend()) as restarted:
+            detail = restarted.get(path, headers=self.headers)
+            self.assertEqual(detail.status_code, 200)
+            self.assertFalse(detail.json()['can_continue'])
+            self.assertTrue(detail.json()['is_interrupted'])
+            listed = restarted.get('/api/v1/conversations', headers=self.headers).json()
+            self.assertFalse(listed['conversations'][0]['can_continue'])
+            self.assertTrue(listed['conversations'][0]['is_interrupted'])
+            before = len(self.invocations)
+            rejected = restarted.post(path + '/messages', headers=self.headers, json={'text': 'Another message'})
+            self.assertEqual(rejected.status_code, 409)
+            self.assertEqual(rejected.json()['error_code'], 'conversation_interrupted')
+            self.assertEqual(rejected.json()['detail'], 'Interrupted — cannot continue')
+            self.assertIn('Start a new conversation', rejected.json()['action'])
+            self.assertEqual(rejected.headers['X-Correlation-ID'], rejected.json()['correlation_id'])
+            self.assertEqual(len(self.invocations), before)
+            foreign = restarted.post(path + '/messages', headers={'Authorization': 'Bearer synthetic-token-b'}, json={'text': 'Hello'})
+            self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(self.client.get('/ready').status_code, 200)
+        fresh = self._create()
+        self.assertTrue(fresh['can_continue'])
+        self.assertFalse(fresh['is_interrupted'])
+
+    def test_normal_completion_and_clarification_allow_next_message(self) -> None:
+        for phase in ('completed', 'awaiting_clarification'):
+            with self.subTest(phase=phase):
+                self.private.router.routes = [route for route in self.private.router.routes if getattr(route, 'path', None) != '/run_sse']
+                self._install_stream(phase=phase)
+                created = self._create()
+                path = f'/api/v1/conversations/{created["conversation_id"]}'
+                for _ in range(2):
+                    response = self.client.post(path + '/messages', headers=self.headers, json={'text': 'Hello'})
+                    self.assertEqual(response.status_code, 200)
+                    detail = self.client.get(path, headers=self.headers).json()
+                    self.assertTrue(detail['can_continue'])
+                    self.assertFalse(detail['is_interrupted'])
+
+    def test_stream_eof_without_saved_completion_is_not_available(self) -> None:
+        self._install_stream(phase='planning')
+        created = self._create()
+        path = f'/api/v1/conversations/{created["conversation_id"]}'
+        response = self.client.post(path + '/messages', headers=self.headers, json={'text': 'Hello'})
+        self.assertEqual(response.status_code, 200)
+        detail = self.client.get(path, headers=self.headers).json()
+        self.assertFalse(detail['can_continue'])
+        self.assertTrue(detail['is_interrupted'])
+
+    def test_reserved_conversation_is_not_mislabelled_as_interrupted(self) -> None:
+        self._install_stream()
+        created = self._create()
+        context = TrustedRequestContext(app_name='synthetic-app', user_id='synthetic-user-a')
+        with self.database.create_session() as session, session.begin():
+            self.assertTrue(ConversationMetadataRepository(session).begin_invocation(context, UUID(created['conversation_id'])))
+        path = f'/api/v1/conversations/{created["conversation_id"]}'
+        detail = self.client.get(path, headers=self.headers).json()
+        self.assertFalse(detail['can_continue'])
+        self.assertFalse(detail['is_interrupted'])
+        rejected = self.client.post(path + '/messages', headers=self.headers, json={'text': 'Hello'})
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(rejected.json()['error_code'], 'conversation_busy')
+        self.assertEqual(self.invocations, [])
+
+    def test_disconnect_marks_interrupted_after_private_cleanup_and_keeps_history(self) -> None:
+        self._install_stream(block=True)
+        created = self._create()
+        path = f'/api/v1/conversations/{created["conversation_id"]}'
+
+        async def interrupt() -> None:
+            first_sent = asyncio.Event()
+            body_sent = False
+            captured: list[Message] = []
+
+            async def receive() -> Message:
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {'type': 'http.request', 'body': b'{"text":"Synthetic long prompt"}', 'more_body': False}
+                await first_sent.wait()
+                return {'type': 'http.disconnect'}
+
+            async def send(message: Message) -> None:
+                captured.append(message)
+                if message['type'] == 'http.response.body' and message.get('body'):
+                    first_sent.set()
+
+            scope = {
+                'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'},
+                'method': 'POST', 'path': path + '/messages', 'raw_path': (path + '/messages').encode(),
+                'query_string': b'', 'headers': [(b'authorization', b'Bearer synthetic-token-a'), (b'content-type', b'application/json')],
+                'scheme': 'http', 'http_version': '1.1', 'server': ('testserver', 80), 'client': ('testclient', 1),
+            }
+            await asyncio.wait_for(self.application(scope, receive, send), 3)
+            self.assertEqual(captured[0]['status'], 200)
+
+        asyncio.run(interrupt())
+        self.assertTrue(self.private_stream_closed)
+        detail = self.client.get(path, headers=self.headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertFalse(detail.json()['can_continue'])
+        self.assertTrue(detail.json()['is_interrupted'])
+        self.assertEqual(detail.json()['messages'][0]['text'], 'Synthetic long prompt')
+        before = len(self.invocations)
+        self.assertEqual(self.client.post(path + '/messages', headers=self.headers, json={'text': 'Retry'}).status_code, 409)
+        self.assertEqual(len(self.invocations), before)
 
     def test_stream_rejects_anonymous_disabled_and_spoofed_body(self) -> None:
         self._install_stream()
@@ -257,7 +391,7 @@ class TestConversationApi(unittest.TestCase):
         created = self._create()
         self.assertEqual(
             set(created),
-            {'conversation_id', 'title', 'created_at', 'last_activity_at', 'messages'},
+            {'conversation_id', 'title', 'created_at', 'last_activity_at', 'messages', 'can_continue', 'is_interrupted'},
         )
         self.assertIsNone(created['title'])
         self.assertEqual(created['messages'], [])
@@ -521,3 +655,4 @@ class TestConversationApi(unittest.TestCase):
         self.assertNotIn('synthetic-private', response.text)
         self.assertNotIn('synthetic-private', '\n'.join(audit.output))
         self.assertNotIn('synthetic-token-a', '\n'.join(audit.output))
+import asyncio
