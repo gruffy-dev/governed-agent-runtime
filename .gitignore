@@ -8,6 +8,7 @@ config/local/
 outputs/
 *.md
 !/README.md
+!/gui/README.md
 
 # Local runtime data
 .local/

@@ -606,7 +606,7 @@ tenancy, RBAC, and frontend services.
 
 The independent Dash/Bootstrap GUI is in `gui/`. Copy that folder unchanged to
 its own repository if required; it has its own package, pinned dependencies,
-entrypoint, assets and tests. See `gui/README.txt` for installation and private
+entrypoint, assets and tests. See [the GUI README](gui/README.md) for installation and private
 logo configuration. The GUI does not import the orchestrator or access its
 databases, and it is not mounted into the backend.
 
