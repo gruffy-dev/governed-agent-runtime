@@ -602,6 +602,36 @@ assigned to teams, roles, and users. It is expected to govern Skill profiles,
 Target visibility, quotas, and access policy through the future identity,
 tenancy, RBAC, and frontend services.
 
+#### Separate GUI browser access
+
+Configure `MOSAIC_BROWSER_ALLOWED_ORIGINS` as a JSON array of exact trusted GUI
+origins. The default is `[]`: no browser-origin access is enabled. For a GUI
+running locally on port 8050, use:
+
+```sh
+export MOSAIC_BROWSER_ALLOWED_ORIGINS='["http://127.0.0.1:8050"]'
+```
+
+Use that same hostname consistently for GUI and backend locally; `localhost`
+and `127.0.0.1` are different origins. Origins include scheme and optional port,
+with no trailing slash or path. HTTPS is required except for explicit loopback
+HTTP origins. Deployment addresses belong in environment configuration, not code.
+
+The GUI makes requests directly to the separate backend with browser credentials
+included. CORS permits GET and POST with Content-Type and Authorization headers,
+credentials and the exact configured origin, never a wildcard. It exposes
+X-Correlation-ID to the browser and handles preflight before user authentication.
+Only public MOSAIC routes are available; this does not expose private ADA routes.
+
+Origin checks additionally reject unapproved, null and duplicate origins on API
+requests, including sign-in and sign-out. Cookie-authenticated writes without
+an approved Origin are forbidden; include that header when testing cookie writes
+with curl. Originless bearer-token and administrator CLI calls remain supported.
+CORS does not grant identity or ownership permissions. Keep the authentication
+cookie host-only, HttpOnly and SameSite=Strict, with Secure enabled in deployment.
+The deployed GUI and backend must use HTTPS under the same parent domain for
+that cookie policy; local HTTP requires the existing explicit local auth mode.
+
 #### Pilot workspace Skill binding
 
 The authenticated, read-only `GET /api/v1/workspace` endpoint returns the

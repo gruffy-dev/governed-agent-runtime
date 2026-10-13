@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from mosaic.backend import Backend
+from mosaic.models.identity.browser_access_configuration import BrowserAccessConfiguration
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.backend_configuration import BackendConfiguration
@@ -184,6 +185,7 @@ class TestBackend(unittest.TestCase):
                     ada_app_factory=FastAPI,
                     application_configurer=configure_application,
                     database_configuration=database_configuration,
+                    browser_access_configuration=BrowserAccessConfiguration(allowed_origins=('http://127.0.0.1:8050',)),
                     pilot_authentication_configuration=(
                         PilotAuthenticationConfiguration(
                             mode='local',
@@ -228,7 +230,7 @@ class TestBackend(unittest.TestCase):
                             created_at,
                         )
                     disabled_cookie_response = client.get('/protected')
-                    logout_response = client.post('/api/v1/auth/logout')
+                    logout_response = client.post('/api/v1/auth/logout', headers={'Origin': 'http://127.0.0.1:8050'})
                     after_logout_response = client.get('/protected')
             finally:
                 database.dispose()

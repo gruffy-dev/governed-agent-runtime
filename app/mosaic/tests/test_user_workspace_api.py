@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mosaic.backend import Backend
+from mosaic.models.identity.browser_access_configuration import BrowserAccessConfiguration
 from mosaic.components.api.user_workspace_api import UserWorkspaceApi
 from mosaic.components.identity.pilot_user_administration_service import PilotUserAdministrationService
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
@@ -63,6 +64,7 @@ class TestUserWorkspaceApi(unittest.TestCase):
                 mode='local', secure_cookie=False
             ),
             skill_catalogue_snapshot=self.snapshot,
+            browser_access_configuration=BrowserAccessConfiguration(allowed_origins=('http://127.0.0.1:8050',)),
         )
         self.database = MosaicDatabase(configuration)
         self.addCleanup(self.database.dispose)
@@ -137,7 +139,7 @@ class TestUserWorkspaceApi(unittest.TestCase):
             self.assertEqual(
                 [skill['skill_id'] for skill in body['skills']], [skill_id]
             )
-            self.assertEqual(self.client.post('/api/v1/auth/logout').status_code, 204)
+            self.assertEqual(self.client.post('/api/v1/auth/logout', headers={'Origin': 'http://127.0.0.1:8050'}).status_code, 204)
             self.assertEqual(self.client.get('/api/v1/workspace').status_code, 401)
 
     def test_assignment_updates_are_visible_without_restart(self) -> None:

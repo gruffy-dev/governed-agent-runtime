@@ -16,6 +16,7 @@ from starlette.responses import StreamingResponse
 from starlette.types import Message
 
 from mosaic.backend import Backend
+from mosaic.models.identity.browser_access_configuration import BrowserAccessConfiguration
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from mosaic.components.persistence.conversation_metadata_repository import ConversationMetadataRepository
@@ -97,6 +98,7 @@ class TestConversationApi(unittest.TestCase):
         return Backend.create_application(
             ada_app_factory=lambda: self.private,
             database_configuration=self.configuration,
+            browser_access_configuration=BrowserAccessConfiguration(allowed_origins=('http://127.0.0.1:8050',)),
             trusted_request_configuration=TrustedRequestConfiguration(
                 app_name='synthetic-app'
             ),
@@ -197,9 +199,12 @@ class TestConversationApi(unittest.TestCase):
         self.client.cookies.set('mosaic_pilot_session', 'synthetic-token-a')
         owned = self.client.post(
             f'/api/v1/conversations/{created["conversation_id"]}/messages',
+            headers={'Origin': 'http://127.0.0.1:8050'},
             json={'text': 'Synthetic greeting'},
         )
         self.assertEqual(owned.status_code, 200)
+        self.assertEqual(owned.headers['Access-Control-Allow-Origin'], 'http://127.0.0.1:8050')
+        self.assertEqual(owned.headers['Access-Control-Allow-Credentials'], 'true')
         self.client.cookies.clear()
         self.invocations.clear()
         self.calls.clear()

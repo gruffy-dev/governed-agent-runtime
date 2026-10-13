@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
 from .components.ada.ada_application_lifecycle import AdaApplicationLifecycle
 from .components.ada.ada_asgi_transport import AdaAsgiTransport
@@ -13,6 +14,8 @@ from .models.backend_configuration import BackendConfiguration
 from .models.ada.ada_application_adapter_configuration import AdaApplicationAdapterConfiguration
 from .models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from .models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
+from .models.identity.browser_access_configuration import BrowserAccessConfiguration
+from .components.identity.browser_origin_middleware import BrowserOriginMiddleware
 from .models.identity.trusted_request_configuration import TrustedRequestConfiguration
 from .models.mosaic_database_configuration import MosaicDatabaseConfiguration
 from .models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
@@ -38,6 +41,7 @@ class Backend:
         skill_catalogue_snapshot: SkillCatalogueSnapshot | None = None,
         ada_adapter_configuration: AdaApplicationAdapterConfiguration | None = None,
         conversation_projection_configuration: ConversationProjectionConfiguration | None = None,
+        browser_access_configuration: BrowserAccessConfiguration | None = None,
     ) -> Any:
         """
         Upgrade storage and create the public MOSAIC application around private ADA.
@@ -60,6 +64,7 @@ class Backend:
         :param skill_catalogue_snapshot: Optional approved catalogue snapshot.
         :param ada_adapter_configuration: Private ASGI lifecycle and transport bounds.
         :param conversation_projection_configuration: Public agent and title limits.
+        :param browser_access_configuration: Exact trusted GUI origins for CORS and writes.
 
         :return: Public MOSAIC app; generated ADA routes are not mounted.
 
@@ -73,6 +78,8 @@ class Backend:
             pilot_administration_configuration = PilotAdministrationConfiguration()
         if trusted_request_configuration is None:
             trusted_request_configuration = TrustedRequestConfiguration()
+        if browser_access_configuration is None:
+            browser_access_configuration = BrowserAccessConfiguration()
         database = MosaicDatabase(database_configuration)
         try:
             MosaicDatabaseMigrator(database).upgrade()
@@ -147,6 +154,19 @@ class Backend:
                 PilotAuthenticationMiddleware,
                 authenticator=authenticator,
                 cookie_name=pilot_authentication_configuration.cookie_name,
+            )
+            application.add_middleware(
+                BrowserOriginMiddleware,
+                configuration=browser_access_configuration,
+                cookie_name=pilot_authentication_configuration.cookie_name,
+            )
+            application.add_middleware(
+                CORSMiddleware,
+                allow_origins=browser_access_configuration.allowed_origins,
+                allow_credentials=True,
+                allow_methods=['GET', 'POST'],
+                allow_headers=['Content-Type', 'Authorization'],
+                expose_headers=['X-Correlation-ID'],
             )
             PilotAuthenticationApi(
                 pilot_authentication_configuration,

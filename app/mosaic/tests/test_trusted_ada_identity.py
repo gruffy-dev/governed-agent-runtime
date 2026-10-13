@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from mosaic.backend import Backend
+from mosaic.models.identity.browser_access_configuration import BrowserAccessConfiguration
 from mosaic.components.ada.ada_application_error import AdaApplicationError
 from mosaic.components.ada.ada_invocation_api import AdaInvocationApi
 from mosaic.components.ada.ada_session_api import AdaSessionApi
@@ -116,6 +117,7 @@ class TestTrustedAdaIdentity(unittest.TestCase):
             public = Backend.create_application(
                 ada_app_factory=lambda: private,
                 application_configurer=configure,
+                browser_access_configuration=BrowserAccessConfiguration(allowed_origins=('http://127.0.0.1:8050',)),
                 database_configuration=MosaicDatabaseConfiguration(
                     database_path=Path(directory) / 'mosaic.db'
                 ),
@@ -145,6 +147,7 @@ class TestTrustedAdaIdentity(unittest.TestCase):
                         headers = {
                             'X-User-ID': 'synthetic-user-a',
                             'X-App-Name': 'claimed-app',
+                            'Origin': 'http://127.0.0.1:8050',
                         }
                         if credential == 'bearer':
                             headers['Authorization'] = 'Bearer synthetic-token-b'
@@ -167,6 +170,7 @@ class TestTrustedAdaIdentity(unittest.TestCase):
                         headers = {
                             'X-User-ID': 'synthetic-user-b',
                             'X-App-Name': 'claimed-app',
+                            'Origin': 'http://127.0.0.1:8050',
                         }
                         if credential == 'bearer':
                             headers['Authorization'] = 'Bearer synthetic-token-a'
