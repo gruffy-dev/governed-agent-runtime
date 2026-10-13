@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 import unittest
@@ -655,4 +656,3 @@ class TestConversationApi(unittest.TestCase):
         self.assertNotIn('synthetic-private', response.text)
         self.assertNotIn('synthetic-private', '\n'.join(audit.output))
         self.assertNotIn('synthetic-token-a', '\n'.join(audit.output))
-import asyncio
