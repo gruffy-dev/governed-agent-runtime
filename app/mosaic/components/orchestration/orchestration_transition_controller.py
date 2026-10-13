@@ -1,5 +1,3 @@
-"""ADA callback controller for goal-scoped orchestration transitions."""
-
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,8 +10,6 @@ from .concurrent_session_invocation_error import ConcurrentSessionInvocationErro
 
 
 class OrchestrationTransitionController(BaseModel):
-    """Persist goal state and enforce tool-ordering invariants through ADA."""
-
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,
@@ -29,14 +25,13 @@ class OrchestrationTransitionController(BaseModel):
         self,
         callback_context: CallbackContextProtocol,
     ) -> None:
-        """Start a new goal or resume one awaiting user clarification.
+        """
+        Start a new goal or resume one awaiting user clarification.
 
-        Args:
-            callback_context: ADA callback context for the new invocation.
+        :param callback_context: ADA callback context for the new invocation.
 
-        Raises:
-            ConcurrentSessionInvocationError: If another invocation remains
-                active for the session goal.
+        :raises ConcurrentSessionInvocationError: If another invocation remains
+            active for the session goal.
         """
         current = self._read_state(callback_context)
         invocation_id = callback_context.invocation_id
@@ -70,15 +65,15 @@ class OrchestrationTransitionController(BaseModel):
         self,
         callback_context: CallbackContextProtocol,
     ) -> None:
-        """Complete a goal after every required capability has terminated.
+        """
+        Complete a goal after every required capability has terminated.
 
-        Args:
-            callback_context: ADA callback context for the ending invocation.
+        :param callback_context: ADA callback context for the ending invocation.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If another invocation replaced
-                the active invocation before completion.
+        :raises RuntimeError: If state is absent, skill discovery is incomplete,
+            or required capabilities remain pending.
+        :raises ConcurrentSessionInvocationError: If another invocation replaced
+            the active invocation before completion.
         """
         current = self._require_state(callback_context)
         if current.phase == 'awaiting_clarification':
@@ -109,19 +104,17 @@ class OrchestrationTransitionController(BaseModel):
         self,
         callback_context: CallbackContextProtocol,
     ) -> tuple[str, ...]:
-        """Return required capabilities still pending for active execution.
+        """
+        Return required capabilities still pending for active execution.
 
-        Args:
-            callback_context: ADA callback context for the current invocation.
+        :param callback_context: ADA callback context for the current invocation.
 
-        Returns:
-            Missing capability names in their declared order. An empty tuple
+        :return: Missing capability names in their declared order. An empty tuple
             is returned while awaiting explicit user clarification.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If another invocation owns the
-                active goal.
+        :raises RuntimeError: If orchestration state was not initialized.
+        :raises ConcurrentSessionInvocationError: If another invocation owns the
+            active goal.
         """
         current = self._require_active_state(callback_context)
         if current.phase == 'awaiting_clarification':
@@ -137,18 +130,16 @@ class OrchestrationTransitionController(BaseModel):
         self,
         callback_context: CallbackContextProtocol,
     ) -> dict[str, str]:
-        """Return terminal non-success outcomes for required capabilities.
+        """
+        Return terminal non-success outcomes for required capabilities.
 
-        Args:
-            callback_context: ADA context for the current invocation.
+        :param callback_context: ADA context for the current invocation.
 
-        Returns:
-            A new mapping of required capability names to limiting outcomes.
+        :return: A new mapping of required capability names to limiting outcomes.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If another invocation owns the
-                active goal.
+        :raises RuntimeError: If orchestration state was not initialized.
+        :raises ConcurrentSessionInvocationError: If another invocation owns the
+            active goal.
         """
         current = self._require_active_state(callback_context)
         return {
@@ -161,18 +152,16 @@ class OrchestrationTransitionController(BaseModel):
         self,
         callback_context: CallbackContextProtocol,
     ) -> bool:
-        """Return whether the active goal still requires skill discovery.
+        """
+        Return whether the active goal still requires skill discovery.
 
-        Args:
-            callback_context: ADA callback context for the current invocation.
+        :param callback_context: ADA callback context for the current invocation.
 
-        Returns:
-            ``True`` until authorised metadata has been discovered once.
+        :return: ``True`` until authorised metadata has been discovered once.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If another invocation owns the
-                active goal.
+        :raises RuntimeError: If orchestration state was not initialized.
+        :raises ConcurrentSessionInvocationError: If another invocation owns the
+            active goal.
         """
         return not self._require_active_state(
             callback_context
@@ -184,21 +173,19 @@ class OrchestrationTransitionController(BaseModel):
         args: dict[str, object],
         tool_context: CallbackContextProtocol,
     ) -> dict[str, object] | None:
-        """Enforce discovery, single-batch loading, and clarification pauses.
+        """
+        Enforce discovery, single-batch loading, and clarification pauses.
 
-        Args:
-            tool: ADA tool about to be invoked.
-            args: Semantic arguments prepared for the tool.
-            tool_context: ADA context for the current tool invocation.
+        :param tool: ADA tool about to be invoked.
+        :param args: Semantic arguments prepared for the tool.
+        :param tool_context: ADA context for the current tool invocation.
 
-        Returns:
-            A short-circuit result when the tool call is blocked, otherwise
+        :return: A short-circuit result when the tool call is blocked, otherwise
             ``None`` so ADA executes the tool normally.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the tool does not belong to
-                the active invocation.
+        :raises RuntimeError: If orchestration state was not initialized.
+        :raises ConcurrentSessionInvocationError: If the tool does not belong to
+            the active invocation.
         """
         current = self._require_active_state(tool_context)
         tool_name = tool.name
@@ -309,19 +296,19 @@ class OrchestrationTransitionController(BaseModel):
         tool_context: CallbackContextProtocol,
         tool_response: dict[str, object],
     ) -> None:
-        """Commit successful tool transitions to ADA-managed session state.
+        """
+        Commit successful tool transitions to ADA-managed session state.
 
-        Args:
-            tool: ADA tool that completed.
-            args: Semantic arguments supplied to the tool.
-            tool_context: ADA context for the current tool invocation.
-            tool_response: Serialized result returned by the tool.
+        :param tool: ADA tool that completed.
+        :param args: Semantic arguments supplied to the tool.
+        :param tool_context: ADA context for the current tool invocation.
+        :param tool_response: Serialized result returned by the tool.
 
-        Raises:
-            ValueError: If a clarification tool call has no valid question.
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the tool does not belong to
-                the active invocation.
+        :raises ValueError: If a clarification tool call has no valid question.
+        :raises RuntimeError: If state is absent or a capability transition
+            attempts to replace or contradict the active goal target.
+        :raises ConcurrentSessionInvocationError: If the tool does not belong to
+            the active invocation.
         """
         current = self._require_active_state(tool_context)
 
@@ -482,16 +469,14 @@ class OrchestrationTransitionController(BaseModel):
         self,
         context: CallbackContextProtocol,
     ) -> OrchestrationState | None:
-        """Read and validate MOSAIC state from an ADA callback context.
+        """
+        Read and validate MOSAIC state from an ADA callback context.
 
-        Args:
-            context: ADA callback or tool context containing session state.
+        :param context: ADA callback or tool context containing session state.
 
-        Returns:
-            Validated state, or ``None`` when a goal has not been initialized.
+        :return: Validated state, or ``None`` when a goal has not been initialized.
 
-        Raises:
-            pydantic.ValidationError: If persisted state is malformed.
+        :raises pydantic.ValidationError: If persisted state is malformed.
         """
         raw_state = context.state.get(self.state_key)
         if raw_state is None:
@@ -502,17 +487,15 @@ class OrchestrationTransitionController(BaseModel):
         self,
         context: CallbackContextProtocol,
     ) -> OrchestrationState:
-        """Return initialized orchestration state.
+        """
+        Return initialized orchestration state.
 
-        Args:
-            context: ADA callback or tool context containing session state.
+        :param context: ADA callback or tool context containing session state.
 
-        Returns:
-            Validated initialized orchestration state.
+        :return: Validated initialized orchestration state.
 
-        Raises:
-            RuntimeError: If no orchestration state has been initialized.
-            pydantic.ValidationError: If persisted state is malformed.
+        :raises RuntimeError: If no orchestration state has been initialized.
+        :raises pydantic.ValidationError: If persisted state is malformed.
         """
         state = self._read_state(context)
         if state is None:
@@ -523,18 +506,16 @@ class OrchestrationTransitionController(BaseModel):
         self,
         context: CallbackContextProtocol,
     ) -> OrchestrationState:
-        """Return state owned by the current ADA invocation.
+        """
+        Return state owned by the current ADA invocation.
 
-        Args:
-            context: ADA callback or tool context for the current invocation.
+        :param context: ADA callback or tool context for the current invocation.
 
-        Returns:
-            Validated state owned by the current invocation.
+        :return: Validated state owned by the current invocation.
 
-        Raises:
-            RuntimeError: If no orchestration state has been initialized.
-            ConcurrentSessionInvocationError: If another invocation owns the
-                active goal.
+        :raises RuntimeError: If no orchestration state has been initialized.
+        :raises ConcurrentSessionInvocationError: If another invocation owns the
+            active goal.
         """
         state = self._require_state(context)
         if state.active_invocation_id != context.invocation_id:
@@ -548,14 +529,13 @@ class OrchestrationTransitionController(BaseModel):
         context: CallbackContextProtocol,
         state: OrchestrationState,
     ) -> None:
-        """Validate and write JSON-compatible state through ADA.
+        """
+        Validate and write JSON-compatible state through ADA.
 
-        Args:
-            context: ADA callback or tool context receiving the state update.
-            state: Candidate orchestration state to validate and persist.
+        :param context: ADA callback or tool context receiving the state update.
+        :param state: Candidate orchestration state to validate and persist.
 
-        Raises:
-            pydantic.ValidationError: If the candidate state is malformed.
+        :raises pydantic.ValidationError: If the candidate state is malformed.
         """
         validated_state = OrchestrationState.model_validate(
             state.model_dump(mode='python')
@@ -563,13 +543,12 @@ class OrchestrationTransitionController(BaseModel):
         context.state[self.state_key] = validated_state.model_dump(mode='json')
 
     def _normalized_names(self, value: object) -> tuple[str, ...]:
-        """Normalize a JSON skill-name list while preserving order.
+        """
+        Normalize a JSON skill-name list while preserving order.
 
-        Args:
-            value: Untrusted tool argument expected to contain skill names.
+        :param value: Untrusted tool argument expected to contain skill names.
 
-        Returns:
-            Unique normalized names, or an empty tuple for a non-list value.
+        :return: Unique normalized names, or an empty tuple for a non-list value.
         """
         if not isinstance(value, list):
             return ()
@@ -585,13 +564,12 @@ class OrchestrationTransitionController(BaseModel):
         self,
         tool_response: dict[str, object],
     ) -> tuple[str, ...]:
-        """Extract approved skill names from a loader response.
+        """
+        Extract approved skill names from a loader response.
 
-        Args:
-            tool_response: Serialized response returned by ``load_skills``.
+        :param tool_response: Serialized response returned by ``load_skills``.
 
-        Returns:
-            Skill names present in valid loaded-skill entries.
+        :return: Skill names present in valid loaded-skill entries.
         """
         loaded_skills = tool_response.get('loaded_skills')
         if not isinstance(loaded_skills, list):
@@ -611,14 +589,13 @@ class OrchestrationTransitionController(BaseModel):
             'optional_capability_names',
         ],
     ) -> tuple[str, ...]:
-        """Extract one capability declaration from loaded skills.
+        """
+        Extract one capability declaration from loaded skills.
 
-        Args:
-            tool_response: Serialized response returned by ``load_skills``.
-            field_name: Required or optional capability declaration to read.
+        :param tool_response: Serialized response returned by ``load_skills``.
+        :param field_name: Required or optional capability declaration to read.
 
-        Returns:
-            Unique normalized capability names in declaration order.
+        :return: Unique normalized capability names in declaration order.
         """
         loaded_skills = tool_response.get('loaded_skills')
         if not isinstance(loaded_skills, list):
@@ -642,13 +619,12 @@ class OrchestrationTransitionController(BaseModel):
         self,
         tool_response: dict[str, object],
     ) -> tuple[str, ...]:
-        """Extract authorised semantic names from discovery metadata.
+        """
+        Extract authorised semantic names from discovery metadata.
 
-        Args:
-            tool_response: Serialized capability-discovery response.
+        :param tool_response: Serialized capability-discovery response.
 
-        Returns:
-            Unique normalized candidate names in response order.
+        :return: Unique normalized candidate names in response order.
         """
         capabilities = tool_response.get('capabilities')
         if not isinstance(capabilities, list):
@@ -670,16 +646,19 @@ class OrchestrationTransitionController(BaseModel):
         tool_response: dict[str, object],
         current: OrchestrationState,
     ) -> None:
-        """Record a terminal result for one required capability.
+        """
+        Record a terminal result for one required capability.
 
         Missing or invalid arguments are deliberately non-terminal because the
         same goal must continue after the user supplies corrected input.
 
-        Args:
-            args: Semantic arguments supplied to ``execute_capability``.
-            tool_context: ADA context receiving the state transition.
-            tool_response: Serialized capability execution result.
-            current: Validated orchestration state before the transition.
+        :param args: Semantic arguments supplied to ``execute_capability``.
+        :param tool_context: ADA context receiving the state transition.
+        :param tool_response: Serialized capability execution result.
+        :param current: Validated orchestration state before the transition.
+
+        :raises RuntimeError: If the result target differs from the goal target.
+        :raises pydantic.ValidationError: If the updated state is malformed.
         """
         capability_name = args.get('capability_name')
         status = tool_response.get('status')
