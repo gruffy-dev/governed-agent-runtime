@@ -41,6 +41,17 @@ class GuiLayout:
                     [
                         html.Div(
                             [
+                                *organisation_logo,
+                                *(
+                                    [
+                                        html.Span(
+                                            className='brand-divider',
+                                            **{'aria-hidden': 'true'},
+                                        )
+                                    ]
+                                    if organisation_logo
+                                    else []
+                                ),
                                 logo,
                                 html.Div(
                                     [
@@ -58,7 +69,6 @@ class GuiLayout:
                                 dbc.Badge(
                                     'PILOT', color='light', className='pilot-badge'
                                 ),
-                                *organisation_logo,
                                 html.Div(id='user-label', className='user-label'),
                                 dbc.Button(
                                     'Sign out',
@@ -79,9 +89,6 @@ class GuiLayout:
                             [
                                 html.Section(
                                     [
-                                        html.Div(
-                                            'MODULAR BY DESIGN', className='eyebrow'
-                                        ),
                                         html.H1(
                                             [
                                                 'Intelligence,',
@@ -92,18 +99,6 @@ class GuiLayout:
                                         html.P(
                                             'Modular Orchestrator of Skills, AI and Capabilities',
                                             className='acronym',
-                                        ),
-                                        html.P(
-                                            'One focused workspace. The right Skills. Governed execution.',
-                                            className='login-description',
-                                        ),
-                                        html.Div(
-                                            [
-                                                html.Span('Assigned Skills'),
-                                                html.Span('Saved conversations'),
-                                                html.Span('Controlled access'),
-                                            ],
-                                            className='login-pillars',
                                         ),
                                     ],
                                     className='login-introduction',

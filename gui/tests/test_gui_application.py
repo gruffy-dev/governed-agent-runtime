@@ -8,6 +8,64 @@ from mosaic_gui.gui_configuration import GuiConfiguration
 
 
 class TestGuiApplication(unittest.TestCase):
+    def test_sign_in_introduction_keeps_only_headline_and_acronym(self) -> None:
+        layout = (
+            GuiApplication.create_application(GuiConfiguration())
+            .server.test_client()
+            .get('/_dash-layout')
+            .get_json()
+        )
+        introduction = layout['props']['children'][1]['props']['children'][0]['props'][
+            'children'
+        ][0]['props']['children']
+        self.assertEqual(len(introduction), 2)
+        self.assertEqual(introduction[0]['type'], 'H1')
+        self.assertIn('Intelligence,', str(introduction[0]))
+        self.assertIn('orchestrated.', str(introduction[0]))
+        self.assertEqual(
+            introduction[1]['props']['children'],
+            'Modular Orchestrator of Skills, AI and Capabilities',
+        )
+        self.assertNotIn('MODULAR BY DESIGN', str(introduction))
+        self.assertNotIn('One focused workspace', str(introduction))
+        self.assertNotIn('login-pillars', str(introduction))
+
+    def test_unbranded_header_has_no_organisation_logo_or_divider(self) -> None:
+        layout = (
+            GuiApplication.create_application(GuiConfiguration())
+            .server.test_client()
+            .get('/_dash-layout')
+            .get_json()
+        )
+        header = layout['props']['children'][0]['props']['children']
+        branding = header[0]['props']['children']
+        self.assertEqual(branding[0]['props']['className'], 'mosaic-symbol')
+        self.assertNotIn('brand-divider', str(header))
+        self.assertNotIn('organisation-logo', str(header))
+
+    def test_organisation_logo_and_divider_precede_mosaic_branding(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'synthetic-logo.png'
+            path.write_bytes(b'\x89PNG\r\n\x1a\nsynthetic-test-data')
+            layout = (
+                GuiApplication.create_application(
+                    GuiConfiguration(organisation_logo_path=path)
+                )
+                .server.test_client()
+                .get('/_dash-layout')
+                .get_json()
+            )
+            header = layout['props']['children'][0]['props']['children']
+            branding = header[0]['props']['children']
+            self.assertEqual(branding[0]['props']['className'], 'organisation-logo')
+            self.assertEqual(branding[1]['props']['className'], 'brand-divider')
+            self.assertEqual(branding[1]['props']['aria-hidden'], 'true')
+            self.assertEqual(branding[2]['props']['className'], 'mosaic-symbol')
+            self.assertNotIn('organisation-logo', str(header[1]))
+            self.assertEqual(
+                header[1]['props']['children'][0]['props']['children'], 'PILOT'
+            )
+
     def test_collapsed_controls_have_matching_icons_and_accessible_names(self) -> None:
         layout = (
             GuiApplication.create_application()

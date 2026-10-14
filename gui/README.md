@@ -47,6 +47,10 @@ MOSAIC_GUI_ORGANISATION_LOGO_HEIGHT     Maximum PNG height; default 40 pixels
 Keep the organisation PNG outside public assets, preferably in the ignored
 private-branding/ directory, or mount it separately in deployment. Its aspect
 ratio is preserved. No organisation image is included in this repository.
+When configured, the organisation logo appears at the left of the header,
+followed by a subtle divider and MOSAIC branding. Without a configured logo,
+neither the organisation image nor its divider is rendered. Account controls
+remain together on the right.
 The header, sign-in screen and SVG favicon share the same modular M tangram:
 left lighter indigo #42549a; right darker indigo #16205d; pale inset pieces.
 Bootstrap 5.3.8 CSS and the tangram are served locally. No CDN is needed.
