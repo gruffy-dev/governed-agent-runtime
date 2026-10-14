@@ -212,8 +212,21 @@ class GuiLayout:
                                                 html.Div(
                                                     [
                                                         dbc.Button(
-                                                            'Conversations',
+                                                            [
+                                                                html.Span(
+                                                                    '▤',
+                                                                    **{
+                                                                        'aria-hidden': 'true'
+                                                                    },
+                                                                ),
+                                                                html.Span(
+                                                                    'Show Conversations',
+                                                                    className='visually-hidden',
+                                                                ),
+                                                            ],
                                                             id='history-show',
+                                                            className='panel-show',
+                                                            title='Show Conversations',
                                                             color='link',
                                                             size='sm',
                                                             style={'display': 'none'},
@@ -234,8 +247,21 @@ class GuiLayout:
                                                             className='state-badge',
                                                         ),
                                                         dbc.Button(
-                                                            'Skills',
+                                                            [
+                                                                html.Span(
+                                                                    '◈',
+                                                                    **{
+                                                                        'aria-hidden': 'true'
+                                                                    },
+                                                                ),
+                                                                html.Span(
+                                                                    'Show Skills',
+                                                                    className='visually-hidden',
+                                                                ),
+                                                            ],
                                                             id='skills-show',
+                                                            className='panel-show',
+                                                            title='Show Skills',
                                                             color='link',
                                                             size='sm',
                                                             style={'display': 'none'},
@@ -298,7 +324,7 @@ class GuiLayout:
                                                     className='composer-bottom',
                                                 ),
                                                 html.P(
-                                                    'MOSAIC can make mistakes. Check important information.',
+                                                    'MOSAIC can make mistakes. Validate important information.',
                                                     className='composer-disclaimer',
                                                 ),
                                             ],

@@ -115,7 +115,7 @@ export class WorkspaceController {
     }
     async #enter(workspace, epoch) {
         /**
-         * Load an authenticated workspace and create, never resume, its initial chat.
+         * Load an authenticated workspace with an unsaved blank chat, never resuming history.
          * :param workspace: Safe owner and assigned Skill metadata from the backend.
          * :param epoch: Sign-in generation preventing previous-user responses appearing.
          */
@@ -126,9 +126,7 @@ export class WorkspaceController {
         this.#props("login-screen", {style: {display: "none"}});
         this.#props("workspace-screen", {style: {display: "flex"}});
         this.#renderSkills();
-        const fresh = await this.#client.request("/api/v1/conversations", {method: "POST", body: {}});
-        if (epoch !== this.#epoch) return;
-        this.#select(fresh);
+        this.#select(null);
         await this.#refreshHistory(epoch);
     }
     async #signOut() {
@@ -164,7 +162,7 @@ export class WorkspaceController {
     }
     async #newConversation() {
         /**
-         * Create a new owned chat without switching away from an active stream.
+         * Open an unsaved blank chat without switching away from an active stream.
          */
         if (this.#busy || this.#streamController || !this.#signedIn) return;
         const epoch = this.#epoch;
@@ -173,11 +171,9 @@ export class WorkspaceController {
         try {
             const workspace = await this.#client.request("/api/v1/workspace");
             if (epoch !== this.#epoch) return;
-            const conversation = await this.#client.request("/api/v1/conversations", {method: "POST", body: {}});
-            if (epoch !== this.#epoch) return;
             this.#workspace = workspace;
             this.#renderSkills();
-            this.#select(conversation);
+            this.#select(null);
             await this.#refreshHistory(epoch);
         } catch (error) {if (epoch === this.#epoch) this.#failure(error);}
         finally {if (epoch === this.#epoch) {this.#busy = false; this.#controls();}}
@@ -201,25 +197,40 @@ export class WorkspaceController {
     #select(detail) {
         /**
          * Display owned persisted messages and the backend's continuation permission.
-         * :param detail: Public conversation detail, never internal ADK state.
+         * :param detail: Public conversation detail, or null for an unsaved blank chat.
          */
         this.#conversation = detail;
-        this.#messages = detail.messages.map(message => ({role: message.role, text: message.text}));
-        this.#props("conversation-title", {children: detail.title || "New conversation"});
-        this.#props("workspace-alert", {is_open: !detail.can_continue, color: "warning", children: detail.is_interrupted ? "Interrupted — this conversation cannot continue. Saved history is available. Start a new conversation." : "This conversation is unavailable while an invocation is active. Start a new conversation or reopen it later."});
+        this.#messages = (detail?.messages || []).map(message => ({role: message.role, text: message.text}));
+        this.#props("message-input", {value: ""});
+        this.#props("conversation-title", {children: detail?.title || "New conversation"});
+        this.#props("workspace-alert", {is_open: detail?.can_continue === false, color: "warning", children: detail?.is_interrupted ? "Interrupted — this conversation cannot continue. Saved history is available. Start a new conversation." : "This conversation is unavailable while an invocation is active. Start a new conversation or reopen it later."});
         this.#renderMessages();
         this.#renderHistory();
         this.#controls();
     }
     async #submit() {
         /**
-         * Display text incrementally, then refresh saved history without automatic retry.
+         * Save a blank chat on its first send, then stream text without automatic retry.
          */
-        if (this.#busy || this.#streamController || !this.#conversation?.can_continue) return;
+        if (this.#busy || this.#streamController || !this.#signedIn || this.#conversation?.can_continue === false) return;
         const input = document.getElementById("message-input");
         const text = input.value.trim();
         if (!text) return;
         const epoch = this.#epoch;
+        if (!this.#conversation) {
+            this.#busy = true;
+            this.#controls();
+            try {
+                const detail = await this.#client.request("/api/v1/conversations", {method: "POST", body: {}});
+                if (epoch !== this.#epoch) return;
+                this.#conversation = detail;
+            } catch (error) {
+                if (epoch === this.#epoch) this.#failure(error);
+                return;
+            } finally {
+                if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
+            }
+        }
         const id = this.#conversation.conversation_id;
         const controller = new AbortController();
         this.#streamController = controller;
@@ -346,8 +357,8 @@ export class WorkspaceController {
         const blocked = this.#busy || streaming;
         this.#props("sign-in", {disabled: this.#busy});
         this.#props("new-conversation", {disabled: blocked || !this.#signedIn});
-        this.#props("send-message", {disabled: blocked || !this.#conversation?.can_continue});
-        this.#props("message-input", {disabled: blocked || !this.#conversation?.can_continue});
+        this.#props("send-message", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
+        this.#props("message-input", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
         this.#props("stop-stream", {style: {display: streaming ? "inline-block" : "none"}});
         this.#props("conversation-state", {children: streaming ? "Responding" : this.#conversation?.is_interrupted ? "Interrupted" : this.#conversation?.can_continue === false ? "Unavailable" : "Ready", color: streaming ? "secondary" : this.#conversation?.can_continue === false ? "warning" : "success"});
         this.#renderHistory();

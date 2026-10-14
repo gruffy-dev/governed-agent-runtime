@@ -48,15 +48,19 @@ Keep the organisation PNG outside public assets, preferably in the ignored
 private-branding/ directory, or mount it separately in deployment. Its aspect
 ratio is preserved. No organisation image is included in this repository.
 The header, sign-in screen and SVG favicon share the same modular M tangram:
-left primary indigo #1e2a78; right darker indigo #16205d; pale inset pieces.
+left lighter indigo #42549a; right darker indigo #16205d; pale inset pieces.
 Bootstrap 5.3.8 CSS and the tangram are served locally. No CDN is needed.
 
 ## Behaviour
 
-Sign-in checks the cookie and always opens a new conversation. History remains
+Sign-in checks the cookie and always opens an unsaved blank chat. A conversation
+is created on the first non-empty message, not on login, refresh or clicking
+New conversation. Existing empty conversations are retained; no history is deleted.
+History remains
 available in the sidebar. Skills are grouped by the most-specific available
 catalogue path, listed once, and are read-only. Descriptions expand on demand.
-Both side panels collapse; desktop separators support pointer and arrow-key
+Both side panels collapse to matching icon-only controls with accessible names
+and tooltips; desktop separators support pointer and arrow-key
 resizing. Markdown supports headings, lists, tables and highlighted code blocks.
 Raw HTML is disabled; the resource policy blocks external embedded images.
 Reasoning and raw tool/SDK metadata are not shown.
@@ -89,7 +93,7 @@ operator responsibilities; no deployment is performed by this code tranche.
 
 ```sh
 PYTHONPATH=src .venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -q
-node --test tests/test_adk_stream.mjs tests/test_api_client.mjs
+node --test tests/test_adk_stream.mjs tests/test_api_client.mjs tests/test_workspace_controller.mjs
 ```
 
 BrowserFixtureBackend in tests/ is synthetic browser-QA data only. It is not

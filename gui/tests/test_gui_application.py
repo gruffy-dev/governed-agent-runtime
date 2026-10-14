@@ -8,6 +8,39 @@ from mosaic_gui.gui_configuration import GuiConfiguration
 
 
 class TestGuiApplication(unittest.TestCase):
+    def test_collapsed_controls_have_matching_icons_and_accessible_names(self) -> None:
+        layout = (
+            GuiApplication.create_application()
+            .server.test_client()
+            .get('/_dash-layout')
+            .get_json()
+        )
+        pending = [layout]
+        controls = {}
+        while pending:
+            component = pending.pop()
+            if not isinstance(component, dict):
+                continue
+            props = component.get('props', {})
+            if props.get('id') in ('history-show', 'skills-show'):
+                controls[props['id']] = props
+            children = props.get('children', [])
+            pending.extend(children if isinstance(children, list) else [children])
+        for identifier, name in (
+            ('history-show', 'Conversations'),
+            ('skills-show', 'Skills'),
+        ):
+            props = controls[identifier]
+            self.assertEqual(props['className'], 'panel-show')
+            self.assertEqual(props['title'], 'Show ' + name)
+            self.assertEqual(
+                props['children'][1]['props']['className'], 'visually-hidden'
+            )
+            self.assertEqual(props['children'][1]['props']['children'], 'Show ' + name)
+        self.assertIn(
+            'MOSAIC can make mistakes. Validate important information.', str(layout)
+        )
+
     def test_tangram_uses_the_approved_m_shape_and_distinct_halves(self) -> None:
         path = (
             Path(__file__).parent.parent
@@ -27,7 +60,7 @@ class TestGuiApplication(unittest.TestCase):
             root.find(
                 "svg:defs/svg:linearGradient[@id='left-primary']/svg:stop", namespace
             ).attrib['stop-color'],
-            '#1e2a78',
+            '#42549a',
         )
         self.assertEqual(
             root.find(
