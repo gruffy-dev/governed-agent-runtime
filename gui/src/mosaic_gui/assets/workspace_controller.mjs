@@ -78,7 +78,7 @@ export class WorkspaceController {
         } catch (error) {
             if (epoch === this.#epoch) {
                 if (this.#signedIn) this.#failure(error);
-                else if (error.status !== 401) this.#loginError("The backend is unavailable. Check the connection and try again.");
+                else if (error.status !== 401) this.#loginError(this.#errorMessage({message: "The backend is unavailable. Check the connection and try again.", correlationId: error.correlationId}));
             }
         } finally {
             if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
@@ -106,7 +106,7 @@ export class WorkspaceController {
         } catch (error) {
             if (epoch === this.#epoch) {
                 if (this.#signedIn) this.#failure(error);
-                else this.#loginError(error.message);
+                else this.#loginError(this.#errorMessage(error));
             }
         } finally {
             token = "";
@@ -141,7 +141,7 @@ export class WorkspaceController {
         this.#busy = true;
         this.#controls();
         try {await this.#client.request("/api/v1/auth/logout", {method: "POST"});}
-        catch {this.#loginError("Sign-out could not be confirmed. Retry Sign out before using another account."); this.#props("sign-out", {style: {display: "inline-block"}});}
+        catch (error) {this.#loginError(this.#errorMessage({message: "Sign-out could not be confirmed. Retry Sign out before using another account.", correlationId: error.correlationId})); this.#props("sign-out", {style: {display: "inline-block"}});}
         finally {this.#busy = false; this.#controls();}
     }
     #reset() {
@@ -242,8 +242,10 @@ export class WorkspaceController {
         this.#controls();
         let reader;
         let failure = null;
+        let correlationId = null;
         try {
             const response = await this.#client.stream(id, text, controller.signal);
+            correlationId = response.headers.get("x-correlation-id");
             reader = response.body.getReader();
             const decoder = new TextDecoder();
             const projection = new AdkStream(answer => {
@@ -260,6 +262,7 @@ export class WorkspaceController {
             projection.finish();
         } catch (error) {
             failure = controller.signal.aborted ? new Error("Response stopped. This conversation may be read-only; saved history remains available.") : error;
+            if (!controller.signal.aborted && !failure.correlationId) failure.correlationId = correlationId;
             controller.abort();
         } finally {
             try {if (reader) {await reader.cancel(); reader.releaseLock();}} catch { /* The transport may already be closed. */ }
@@ -368,8 +371,19 @@ export class WorkspaceController {
          * Show safe failure guidance and remove previous-user content on authentication loss.
          * :param error: Safe client error; raw provider exception data is never rendered.
          */
-        if (error.status === 401) {++this.#epoch; this.#reset(); this.#busy = false; this.#loginError(error.message); this.#controls();}
-        else this.#props("workspace-alert", {is_open: true, color: "warning", children: error.message || "The backend is unavailable. Check the connection and try again."});
+        if (error.status === 401) {++this.#epoch; this.#reset(); this.#busy = false; this.#loginError(this.#errorMessage(error)); this.#controls();}
+        else this.#props("workspace-alert", {is_open: true, color: "warning", children: this.#errorMessage(error)});
+    }
+    #errorMessage(error) {
+        /**
+         * Append a server-generated UUID reference to safe guidance, never raw diagnostics.
+         * :param error: Safe client failure with an optional response correlation ID.
+         * :return: Plain display text, unchanged when no valid reference is available.
+         */
+        const message = error.message || "The backend is unavailable. Check the connection and try again.";
+        const reference = error.correlationId;
+        return typeof reference === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference)
+            ? `${message} Reference: ${reference}` : message;
     }
     #loginError(message) {
         /**

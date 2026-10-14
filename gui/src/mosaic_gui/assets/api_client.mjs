@@ -50,7 +50,7 @@ export class ApiClient {
         }
         if (!response.ok) throw await this.#failure(response);
         if (!response.headers.get("content-type")?.startsWith("text/event-stream") || !response.body) {
-            throw new Error("The backend did not return a usable response stream.");
+            throw Object.assign(new Error("The backend did not return a usable response stream."), {correlationId: response.headers.get("x-correlation-id")});
         }
         return response;
     }

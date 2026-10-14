@@ -65,6 +65,11 @@ resizing. Markdown supports headings, lists, tables and highlighted code blocks.
 Raw HTML is disabled; the resource policy blocks external embedded images.
 Reasoning and raw tool/SDK metadata are not shown.
 
+Request failures display a safe message and, when supplied by the backend, a
+UUID reference matching X-Correlation-ID. Include that reference when reporting
+an issue. Missing or malformed references are omitted. Stream failures retain
+the originating response reference; tokens and raw provider diagnostics remain hidden.
+
 Native ADK partial text is incremental; final aggregated text replaces the
 partial turn instead of duplicating it. Only text is submitted. Conversation
 switching and New conversation are disabled during streaming. Stop aborts the

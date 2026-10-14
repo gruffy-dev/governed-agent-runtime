@@ -62,6 +62,8 @@ class BrowserFixtureBackend:
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST'
+        response.headers['Access-Control-Expose-Headers'] = 'X-Correlation-ID'
+        response.headers['X-Correlation-ID'] = str(uuid4())
         response.headers['Cache-Control'] = 'no-store'
         return response
 

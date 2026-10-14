@@ -18,17 +18,19 @@ class TestWorkspaceController {
         globalThis.window = {addEventListener() {}, dash_clientside: {set_props: (id, props) => Object.assign(element(id), props)}};
         globalThis.requestAnimationFrame = callback => callback();
         const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: []};
-        const state = {failCreation: false};
+        const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false};
         globalThis.fetch = async (url, options) => {
             requests.push({url, options});
             const path = new URL(url).pathname;
+            const failure = () => Response.json({detail: "private synthetic diagnostic"}, {status: state.failureStatus, headers: state.correlationId ? {"X-Correlation-ID": state.correlationId} : {}});
+            if (path === "/api/v1/auth/token") return state.failSignIn ? failure() : new Response(null, {status: 204});
             if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: []});
             if (path === "/api/v1/conversations" && options.method === "POST") {
-                if (state.failCreation) return Response.json({}, {status: 503});
+                if (state.failCreation) return failure();
                 return Response.json(detail, {status: 201});
             }
             if (path === "/api/v1/conversations") return Response.json({conversations: []});
-            if (path.endsWith("/stream")) return new Response('data: {"content":{"role":"model","parts":[{"text":"Synthetic answer"}]},"partial":false}\n\n');
+            if (path.endsWith("/messages")) return new Response(state.failStream ? 'data: {"error":"private synthetic diagnostic"}\n\n' : 'data: {"content":{"role":"model","parts":[{"text":"Synthetic answer"}]},"partial":false}\n\n', {headers: {"Content-Type": "text/event-stream", ...(state.correlationId ? {"X-Correlation-ID": state.correlationId} : {})}});
             if (path === "/api/v1/conversations/synthetic-chat") return Response.json(detail);
             throw new Error("Unexpected synthetic request: " + path);
         };
@@ -85,11 +87,54 @@ class TestWorkspaceController {
                 assert.equal(fixture.creations().length, 1);
                 assert.equal(fixture.element("message-input").value, "Keep this message");
                 assert.equal(fixture.element("send-message").disabled, false);
-                assert.equal(fixture.requests.some(request => request.url.endsWith("/stream")), false);
+                assert.equal(fixture.requests.some(request => request.url.endsWith("/messages")), false);
                 fixture.state.failCreation = false;
                 fixture.click("send-message");
                 await this.settle();
                 assert.equal(fixture.creations().length, 2);
+            } finally {fixture.restore();}
+        });
+        test("request errors show only safe guidance and a valid UUID reference", async () => {
+            for (const [status, reference] of [[503, "12345678-1234-1234-1234-123456789abc"], [401, "12345678-1234-1234-1234-123456789abc"], [503, null], [503, "<script>private</script>"], [503, "x".repeat(1000)]]) {
+                const fixture = this.setup();
+                try {
+                    await this.settle();
+                    Object.assign(fixture.state, {failCreation: true, failureStatus: status, correlationId: reference});
+                    fixture.element("message-input").value = "Synthetic message";
+                    fixture.click("send-message");
+                    await this.settle();
+                    const message = fixture.element(status === 401 ? "sign-in-error" : "workspace-alert").children;
+                    assert.equal(message.includes("Reference:"), typeof reference === "string" && reference.startsWith("12345678-"));
+                    if (reference?.startsWith("12345678-")) assert.ok(message.endsWith("Reference: " + reference));
+                    assert.equal(message.includes("private"), false);
+                } finally {fixture.restore();}
+            }
+        });
+        test("sign-in rejection includes its reference without displaying the token", async () => {
+            const fixture = this.setup();
+            try {
+                await this.settle();
+                Object.assign(fixture.state, {failSignIn: true, failureStatus: 401, correlationId: "12345678-1234-1234-1234-123456789abc"});
+                fixture.element("pilot-token").value = "synthetic-private-credential";
+                fixture.click("sign-in");
+                await this.settle();
+                const message = fixture.element("sign-in-error").children;
+                assert.ok(message.endsWith("Reference: " + fixture.state.correlationId));
+                assert.equal(message.includes("synthetic-private-credential"), false);
+                assert.equal(message.includes("private synthetic diagnostic"), false);
+            } finally {fixture.restore();}
+        });
+        test("SSE failure retains the stream response reference after history refresh", async () => {
+            const fixture = this.setup();
+            try {
+                await this.settle();
+                Object.assign(fixture.state, {failStream: true, correlationId: "12345678-1234-1234-1234-123456789abc"});
+                fixture.element("message-input").value = "Synthetic message";
+                fixture.click("send-message");
+                await this.settle();
+                const message = fixture.element("workspace-alert").children;
+                assert.ok(message.endsWith("Reference: " + fixture.state.correlationId));
+                assert.equal(message.includes("private"), false);
             } finally {fixture.restore();}
         });
     }

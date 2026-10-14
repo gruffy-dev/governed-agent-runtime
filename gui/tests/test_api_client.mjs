@@ -38,6 +38,14 @@ class TestApiClient {
                 await assert.rejects(new ApiClient("https://api.example.com").request("/api/v1/workspace"), error => error.status === 401 && !error.message.includes("private") && error.correlationId === "synthetic-correlation");
             } finally {globalThis.fetch = original;}
         });
+        test("an unusable stream keeps its response correlation reference", async () => {
+            const original = globalThis.fetch;
+            const reference = "12345678-1234-1234-1234-123456789abc";
+            globalThis.fetch = async () => Response.json({detail: "private synthetic diagnostic"}, {headers: {"X-Correlation-ID": reference}});
+            try {
+                await assert.rejects(new ApiClient("https://api.example.com").stream("synthetic-id", "Synthetic text", new AbortController().signal), error => error.correlationId === reference && !error.message.includes("private"));
+            } finally {globalThis.fetch = original;}
+        });
     }
 }
 TestApiClient.run();
