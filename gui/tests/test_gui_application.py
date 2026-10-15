@@ -8,6 +8,22 @@ from mosaic_gui.gui_configuration import GuiConfiguration
 
 
 class TestGuiApplication(unittest.TestCase):
+    def test_ada_credit_appears_only_in_sign_in_card(self) -> None:
+        layout = (
+            GuiApplication.create_application(GuiConfiguration())
+            .server.test_client()
+            .get('/_dash-layout')
+            .get_json()
+        )
+        screens = layout['props']['children'][1]['props']['children']
+        card = screens[0]['props']['children'][1]
+        credit = card['props']['children']['props']['children'][-1]
+        self.assertEqual(credit['type'], 'P')
+        self.assertEqual(credit['props']['children'], 'Built on ADA')
+        self.assertEqual(credit['props']['className'], 'foundation-credit')
+        self.assertNotIn('Built on ADA', str(screens[1]))
+        self.assertEqual(str(layout).count('Built on ADA'), 1)
+
     def test_sign_in_introduction_keeps_only_headline_and_acronym(self) -> None:
         layout = (
             GuiApplication.create_application(GuiConfiguration())

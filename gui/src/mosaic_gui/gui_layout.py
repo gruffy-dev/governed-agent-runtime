@@ -143,6 +143,10 @@ class GuiLayout:
                                                 'Your token is exchanged for a protected browser cookie.',
                                                 className='sign-in-note',
                                             ),
+                                            html.P(
+                                                'Built on ADA',
+                                                className='foundation-credit',
+                                            ),
                                         ]
                                     ),
                                     className='sign-in-card',
