@@ -96,10 +96,6 @@ class GuiLayout:
                                                 html.Span('orchestrated.'),
                                             ]
                                         ),
-                                        html.P(
-                                            'Modular Orchestrator of Skills, AI and Capabilities',
-                                            className='acronym',
-                                        ),
                                     ],
                                     className='login-introduction',
                                 ),
@@ -144,7 +140,7 @@ class GuiLayout:
                                                 className='sign-in-note',
                                             ),
                                             html.P(
-                                                'Built on ADA',
+                                                'Built on Ada',
                                                 className='foundation-credit',
                                             ),
                                         ]

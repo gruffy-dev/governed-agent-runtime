@@ -19,12 +19,12 @@ class TestGuiApplication(unittest.TestCase):
         card = screens[0]['props']['children'][1]
         credit = card['props']['children']['props']['children'][-1]
         self.assertEqual(credit['type'], 'P')
-        self.assertEqual(credit['props']['children'], 'Built on ADA')
+        self.assertEqual(credit['props']['children'], 'Built on Ada')
         self.assertEqual(credit['props']['className'], 'foundation-credit')
-        self.assertNotIn('Built on ADA', str(screens[1]))
-        self.assertEqual(str(layout).count('Built on ADA'), 1)
+        self.assertNotIn('Built on Ada', str(screens[1]))
+        self.assertEqual(str(layout).count('Built on Ada'), 1)
 
-    def test_sign_in_introduction_keeps_only_headline_and_acronym(self) -> None:
+    def test_sign_in_introduction_keeps_only_headline(self) -> None:
         layout = (
             GuiApplication.create_application(GuiConfiguration())
             .server.test_client()
@@ -34,13 +34,12 @@ class TestGuiApplication(unittest.TestCase):
         introduction = layout['props']['children'][1]['props']['children'][0]['props'][
             'children'
         ][0]['props']['children']
-        self.assertEqual(len(introduction), 2)
+        self.assertEqual(len(introduction), 1)
         self.assertEqual(introduction[0]['type'], 'H1')
         self.assertIn('Intelligence,', str(introduction[0]))
         self.assertIn('orchestrated.', str(introduction[0]))
-        self.assertEqual(
-            introduction[1]['props']['children'],
-            'Modular Orchestrator of Skills, AI and Capabilities',
+        self.assertNotIn(
+            'Modular Orchestrator of Skills, AI and Capabilities', str(layout)
         )
         self.assertNotIn('MODULAR BY DESIGN', str(introduction))
         self.assertNotIn('One focused workspace', str(introduction))
