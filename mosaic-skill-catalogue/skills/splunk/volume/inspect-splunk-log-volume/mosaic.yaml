@@ -2,7 +2,7 @@ schema_version: 1
 version: 1.0.0
 kind: procedural
 required_capability_names:
-  - splunk.index.activity.count
+  - splunk.index.volume.read
 optional_capability_names:
-  - splunk.index.errors.read
-  - splunk.indexes.read
+  - splunk.index.sources.read
+  - splunk.index.ingestion.read

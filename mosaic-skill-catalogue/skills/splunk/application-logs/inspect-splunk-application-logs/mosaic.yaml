@@ -1,0 +1,8 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names:
+  - splunk.pod.logs.read
+optional_capability_names:
+  - splunk.pod.errors.read
+  - splunk.index.ingestion.read

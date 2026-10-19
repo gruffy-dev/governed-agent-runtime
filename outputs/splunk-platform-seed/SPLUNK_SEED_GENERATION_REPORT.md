@@ -2,7 +2,9 @@
 
 ## Status
 
-Candidate pilot seed generated for review. MCP discovery and `get_indexes` were
+Expanded candidate pilot seed generated for review: ten Capabilities and eight
+Skills, with the primary runtime snapshot assembled into one file.
+Initial MCP discovery and `get_indexes` were
 validated against a live Splunk 9.1 environment, but the generated fixed and
 templated searches have not yet been exercised through MOSAIC. The seed must
 not yet be treated as an approved production integration.
@@ -45,36 +47,72 @@ Splunk 9.1.
 
 ## Seed design
 
-The candidate contains one endpoint-per-target provider, four semantic
-Capabilities, and three procedural Skills:
+The expanded candidate contains two endpoint-per-target connection aliases,
+ten semantic Capabilities and eight procedural Skills. The original four
+Capabilities remain available:
 
 - `splunk.indexes.read`
 - `splunk.internal.errors.read`
 - `splunk.index.activity.count`
 - `splunk.index.errors.read`
+
+New tenant and application outcomes are:
+
+- `splunk.pod.logs.read`
+- `splunk.pod.errors.read`
+- `splunk.index.ingestion.read`
+- `splunk.index.sources.read`
+- `splunk.request.trace.read`
+- `splunk.index.volume.read`
+
+The existing Skill IDs are preserved and grouped by function:
+
 - `inspect-splunk-platform-health`
 - `inspect-splunk-index`
 - `investigate-splunk-index-errors`
 
-The seed starts with index metadata, recent activity counts, and aggregate
-error indicators. It intentionally does not expose a general Splunk search
-Capability or raw events.
+Five added Skills cover the missing investigations:
+
+- `inspect-splunk-application-logs`
+- `investigate-splunk-missing-logs`
+- `investigate-splunk-request`
+- `inspect-splunk-log-volume`
+- `investigate-openshift-application-logs`
+
+Seven packages use `skills/splunk/<function>/<skill-name>` with indexes,
+platform-health, investigations, application-logs, ingestion, request-tracing
+and volume functions. The cross-domain package uses
+`skills/container-platforms/investigations/investigate-openshift-application-logs`.
+The index Skill is version 1.1.0 because it gains optional ingestion/source
+outcomes. Other existing versions and IDs are preserved.
+
+Bounded log excerpts are now supported. No unrestricted raw event, arbitrary
+SPL or export Capability is exposed. The platform Skill retains aggregate-only
+behaviour and is not a complete distributed Splunk health assessment.
 
 ## Safety boundary
 
 - Only `get_indexes` and `search_oneshot` are allowlisted.
-- Every search uses a fixed fifteen-minute window.
+- Original activity/error searches retain their fixed fifteen-minute window.
+  New searches accept only `15m`, `30m` or `1h`, with identical SPL and REST
+  time bounds. They do not support arbitrary historical intervals.
 - Query, maximum count, output format, risk tolerance, and sanitization are
   fixed by the binding and cannot be overridden by the model.
-- The only semantic query value is one exact index name constrained to a
-  conservative character set and maximum length.
+- New semantic values are exact namespace, pod or non-secret request names
+  and one enumerated window. Full-match patterns exclude SPL syntax. The
+  namespace is the index name under the supplied tenant convention.
 - Templates exclude whitespace, quotes, wildcards, pipes, brackets, and other
   SPL syntax from the supplied index name.
-- Search outputs contain counts grouped by host/component or host/sourcetype;
-  raw events are not returned by the generated queries.
+- New sampled log results contain at most 30 excerpts of at most 600 characters
+  plus selected timestamps and cluster/pod/container metadata. The final table
+  does not contain `_raw`. Minimal display redaction is still required because
+  provider sanitisation is not a comprehensive sensitive-data control.
 - Results are bounded to at most 50 aggregate rows and 200,000 encoded
   characters, except the index catalogue which permits 1,000 entries and
   500,000 characters.
+- New search responses are limited to 100,000 encoded characters and 30
+  selected rows. Result extraction remains `/result/events`; a tool error
+  envelope without events fails extraction rather than becoming an empty list.
 
 This is defence in depth. The Splunk token must still belong to a least-
 privilege user limited to the indexes approved for this pilot.
@@ -85,6 +123,23 @@ privilege user limited to the indexes approved for this pilot.
 - Current MCP endpoint: `http://localhost:8051/mcp`.
 - Provider routing: endpoint per target because the MCP server is configured
   for one Splunk backend and accepts no target selector.
+- The existing `splunk` connection remains on the Splunk platform target.
+  A separate `splunk-workloads` connection alias uses the same endpoint but
+  resolves on the existing Kubernetes canonical cluster target. It permits
+  only `search_oneshot`, not index inventory or internal platform searches.
+  Activity and error aggregate outcomes gain a tenant binding on this target.
+  No new MCP server is deployed by this change.
+- The primary `config/local/capability-runtime-snapshot.json` contains the
+  combined definitions and is the sole Splunk capability JSON. The separate
+  Splunk example file has been removed. Container/MQ definitions and target
+  identities are preserved; the previously identifying cluster alias is now
+  generic. The tests read this primary file directly.
+- Routing associates an endpoint with the cluster; it does not enforce a
+  cluster filter in SPL. Index names can repeat across clusters. Searches
+  retain observed cluster/pod/container hints, and the cross-domain Skill
+  refuses attribution when the cluster relationship cannot be verified.
+  Validate collector-controlled field mappings before demonstrating correlation;
+  ambiguous or missing metadata must not be silently treated as a match.
 - The endpoint currently has no inbound MCP authentication and must remain
   reachable only from the Mosaic runtime or an equivalent trusted boundary.
 - `localhost` is valid only while Mosaic and the MCP server share a network
@@ -94,7 +149,7 @@ privilege user limited to the indexes approved for this pilot.
 
 ## Validation
 
-Completed mechanical validation:
+Initial mechanical validation, before this expansion:
 
 - The standalone contribution validates with one Target, one Provider, and
   four Capabilities.
@@ -105,6 +160,24 @@ Completed mechanical validation:
 - Exact index names prepare successfully for `splunk/pilot`; wildcard,
   whitespace, quote, pipe, and newline injection values are rejected.
 - All 351 existing MOSAIC unit tests pass, with two existing skips.
+
+Expansion validation:
+
+- All eight expanded packages validate at the required hierarchy depth.
+- The primary validates with three Targets, six
+  connection aliases and 75 Capabilities.
+- Cross-domain required Kubernetes and Splunk Capabilities resolve together
+  against the same canonical cluster Target.
+- `app/mosaic/tests/test_splunk_skill_seed.py` covers hierarchy and references,
+  read-only allowlists, window consistency, output bounds, injected scope,
+  ignored overrides, platform/workload routing separation, structured errors
+  and coexistence with container and MQ outcomes in the primary file.
+- No new live Splunk calls were made during expansion. Initial live discovery
+  below is prior-session evidence, not verification of the added queries.
+- All 362 backend unit tests complete successfully, with two existing opt-in
+  live tests skipped. Eleven focused seed tests pass, as do lint and compilation.
+  The replacement provider's guardrail evaluator accepts 33 synthetic prepared
+  queries across the supported targets and windows. No search was executed.
 
 Live validation completed:
 
@@ -123,6 +196,12 @@ Validation still required before approval:
 4. Replace `localhost` with the approved private endpoint before separating
    Mosaic and the MCP server.
 5. Review the Skills and aggregate queries with the Splunk platform owner.
+6. Exercise added queries with normal, empty, denied, timeout and oversized
+   responses. Verify pod-field mappings, request identifier fields and UTC
+   timestamps. Known mappings are candidates, not proven deployment facts.
+7. Demonstrate same-namespace records from different clusters are not combined.
+   The current query scope is the approved index; provider-side permissions
+   remain the security boundary. Metadata checks are not an RBAC replacement.
 
 ## Known limitations
 

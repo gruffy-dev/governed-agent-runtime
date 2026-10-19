@@ -29,6 +29,15 @@ wildcard or accept SPL syntax as an index name.
    or storage size helps interpret the result.
 4. Report the requested index, time window, and any unavailable evidence.
 
+When working on an approved container-cluster target, use its exact namespace
+as `index_name`. Optional ingestion and source capabilities additionally accept
+`namespace` and `window` (`15m`, `30m` or `1h`); use `15m` when comparing with
+the fixed-window activity count. Do not widen a user's requested scope.
+These optional capabilities may be unavailable on the separate Splunk platform
+target. The index catalogue is platform-wide and must not be required to answer
+a tenant question. Keep returned cluster groups separate; a namespace/index
+name alone does not establish cluster identity.
+
 ## Evidence standards
 
 - Treat the count as activity observed in one fifteen-minute window, not an

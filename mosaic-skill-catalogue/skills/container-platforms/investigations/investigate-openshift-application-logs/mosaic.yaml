@@ -1,0 +1,14 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names:
+  - kubernetes.pods.status.read
+  - kubernetes.events.read
+  - splunk.pod.logs.read
+optional_capability_names:
+  - kubernetes.pod.detail.read
+  - kubernetes.pod.logs.read
+  - kubernetes.deployments.status.read
+  - splunk.pod.errors.read
+  - splunk.index.ingestion.read
+  - splunk.request.trace.read

@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "snapshot_id": "local-with-splunk-pilot-v1",
+  "snapshot_id": "assembled-splunk-skills-v2",
   "targets": [
     {
       "id": "openshift/cluster1",
       "display_name": "Local OpenShift development cluster",
       "aliases": [
         "cluster1",
-        "ukonpd1a"
+        "example-cluster"
       ]
     },
     {
@@ -104,6 +104,20 @@
       "routing": {
         "mode": "endpoint_per_target",
         "target_id": "splunk/pilot"
+      }
+    },
+    {
+      "provider_name": "splunk-workloads-mcp-pilot",
+      "provider_type": "splunk-workloads",
+      "transport": "streamable_http",
+      "header_strategy": "ada_request_context",
+      "base_url": "http://localhost:8051/mcp",
+      "allowed_tool_names": [
+        "search_oneshot"
+      ],
+      "routing": {
+        "mode": "endpoint_per_target",
+        "target_id": "openshift/cluster1"
       }
     }
   ],
@@ -3351,6 +3365,70 @@
             "maximum_response_characters": 100000,
             "maximum_collection_items": 10
           }
+        },
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "index_name"
+              ],
+              "value_template": "index={index_name} earliest=-15m latest=now | stats count",
+              "semantic_argument_patterns": {
+                "index_name": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "fixed",
+              "fixed_value": "-15m"
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 1
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events/0/count",
+            "operation": "select",
+            "output_field": "event_count",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 10
+          }
         }
       ]
     },
@@ -3420,6 +3498,550 @@
             ],
             "maximum_response_characters": 200000,
             "maximum_collection_items": 50
+          }
+        },
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "index_name"
+              ],
+              "value_template": "index={index_name} earliest=-15m latest=now (\"ERROR\" OR \"Exception\" OR \"failed\") | stats count by host sourcetype | sort - count | head 50",
+              "semantic_argument_patterns": {
+                "index_name": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "fixed",
+              "fixed_value": "-15m"
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 50
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "index_error_summary",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 200000,
+            "maximum_collection_items": 50
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.pod.logs.read",
+      "description": "Read up to 30 short log excerpts for an exact pod in the tenant index named by its namespace, retaining cluster and container hints for verification.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window",
+                "pod_name"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | where pod_hint=\"{pod_name}\" | head 30 | eval log_excerpt=substr(_raw,1,600) | table _time _indextime cluster_hint pod_hint pod_uid_hint container_hint host source sourcetype log_excerpt",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)",
+                "pod_name": "[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "pod_log_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.pod.errors.read",
+      "description": "Read up to 30 candidate error excerpts for an exact pod in its namespace index using a fixed keyword heuristic, not an exhaustive severity classification.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window",
+                "pod_name"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | where pod_hint=\"{pod_name}\" | where match(lower(_raw),\"error|exception|fatal|panic|timeout|timed out|connection refused|failed\") | head 30 | eval log_excerpt=substr(_raw,1,600) | table _time _indextime cluster_hint pod_hint pod_uid_hint container_hint host source sourcetype log_excerpt",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)",
+                "pod_name": "[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "pod_error_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.index.ingestion.read",
+      "description": "Summarise event count, event-time coverage, indexing timestamps and observed indexing delay within one namespace index and recent window; group by observed cluster hint.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | eval observed_delay_seconds=_indextime-_time | stats count AS event_count min(_time) AS first_event_time max(_time) AS last_event_time max(_indextime) AS last_index_time max(observed_delay_seconds) AS maximum_observed_delay_seconds by cluster_hint | head 30",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "ingestion_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.index.sources.read",
+      "description": "Read up to 30 leading source groups within one namespace index, preserving observed cluster hints rather than claiming cluster isolation.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | stats count AS event_count by cluster_hint host source sourcetype | sort 30 - event_count",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "source_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.request.trace.read",
+      "description": "Read up to 30 short excerpts matching one exact correlation, request or trace identifier in a namespace index; returned cluster hints must be verified.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window",
+                "request_id"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | where correlation_id=\"{request_id}\" OR request_id=\"{request_id}\" OR trace_id=\"{request_id}\" OR 'trace.id'=\"{request_id}\" | head 30 | eval log_excerpt=substr(_raw,1,600) | table _time _indextime cluster_hint pod_hint pod_uid_hint container_hint host source sourcetype log_excerpt",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)",
+                "request_id": "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "request_trace_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.index.volume.read",
+      "description": "Read five-minute event-count buckets for one namespace index, grouped by observed cluster hint; counts are not byte volume or licence consumption.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk-workloads",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "namespace",
+                "window"
+              ],
+              "value_template": "index=\"{namespace}\" earliest=-{window} latest=now | eval cluster_hint=coalesce('kubernetes.cluster_name','kubernetes.cluster.name',cluster_name,\"unknown\"), pod_hint=coalesce('kubernetes.pod_name','kubernetes.pod.name',pod_name,pod,\"unknown\"), container_hint=coalesce('kubernetes.container_name','kubernetes.container.name',container_name,\"unknown\"), pod_uid_hint=coalesce('kubernetes.pod_id','kubernetes.pod_uid',pod_uid,\"unknown\") | bin _time span=5m | stats count AS event_count by _time cluster_hint | sort 0 _time cluster_hint | head 30",
+              "semantic_argument_patterns": {
+                "namespace": "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "template",
+              "semantic_argument_names": [
+                "window"
+              ],
+              "value_template": "-{window}",
+              "semantic_argument_patterns": {
+                "window": "(?:15m|30m|1h)"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 30
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "event_volume_evidence",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 30
           }
         }
       ]
