@@ -1,0 +1,260 @@
+{
+  "schema_version": 3,
+  "snapshot_id": "splunk-seed-pilot-v1",
+  "targets": [
+    {
+      "id": "splunk/pilot",
+      "display_name": "Splunk pilot environment",
+      "aliases": [
+        "splunk",
+        "splunk-pilot"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "provider_name": "splunk-mcp-pilot",
+      "provider_type": "splunk",
+      "transport": "streamable_http",
+      "header_strategy": "ada_request_context",
+      "base_url": "http://localhost:8051/mcp",
+      "allowed_tool_names": [
+        "get_indexes",
+        "search_oneshot"
+      ],
+      "routing": {
+        "mode": "endpoint_per_target",
+        "target_id": "splunk/pilot"
+      }
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "splunk.indexes.read",
+      "description": "Read the bounded catalogue of indexes visible to the selected Splunk environment.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk",
+          "tool_name": "get_indexes",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/indexes",
+            "operation": "select",
+            "output_field": "indexes",
+            "evidence_tool_argument_names": [],
+            "maximum_response_characters": 500000,
+            "maximum_collection_items": 1000
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.internal.errors.read",
+      "description": "Read a bounded aggregate of recent Splunk internal errors by host and component.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "fixed",
+              "fixed_value": "index=_internal earliest=-15m latest=now log_level=ERROR | stats count by host component | sort - count | head 50"
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "fixed",
+              "fixed_value": "-15m"
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 50
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "internal_error_summary",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 200000,
+            "maximum_collection_items": 50
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.index.activity.count",
+      "description": "Count events in one exact Splunk index over the fixed recent fifteen-minute window.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "index_name"
+              ],
+              "value_template": "index={index_name} earliest=-15m latest=now | stats count",
+              "semantic_argument_patterns": {
+                "index_name": "[_A-Za-z][_A-Za-z0-9.-]{0,79}"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "fixed",
+              "fixed_value": "-15m"
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 1
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events/0/count",
+            "operation": "select",
+            "output_field": "event_count",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 100000,
+            "maximum_collection_items": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "splunk.index.errors.read",
+      "description": "Read bounded aggregate error indicators for one exact Splunk index over the fixed recent fifteen-minute window.",
+      "provider_bindings": [
+        {
+          "provider_type": "splunk",
+          "tool_name": "search_oneshot",
+          "priority": 100,
+          "read_only": true,
+          "argument_bindings": [
+            {
+              "tool_argument_name": "query",
+              "source": "template",
+              "semantic_argument_names": [
+                "index_name"
+              ],
+              "value_template": "index={index_name} earliest=-15m latest=now (\"ERROR\" OR \"Exception\" OR \"failed\") | stats count by host sourcetype | sort - count | head 50",
+              "semantic_argument_patterns": {
+                "index_name": "[_A-Za-z][_A-Za-z0-9.-]{0,79}"
+              },
+              "required": true
+            },
+            {
+              "tool_argument_name": "earliest_time",
+              "source": "fixed",
+              "fixed_value": "-15m"
+            },
+            {
+              "tool_argument_name": "latest_time",
+              "source": "fixed",
+              "fixed_value": "now"
+            },
+            {
+              "tool_argument_name": "max_count",
+              "source": "fixed",
+              "fixed_value": 50
+            },
+            {
+              "tool_argument_name": "output_format",
+              "source": "fixed",
+              "fixed_value": "json"
+            },
+            {
+              "tool_argument_name": "risk_tolerance",
+              "source": "fixed",
+              "fixed_value": 75
+            },
+            {
+              "tool_argument_name": "sanitize_output",
+              "source": "fixed",
+              "fixed_value": true
+            }
+          ],
+          "result_binding": {
+            "content_source": "structured_content",
+            "content_media_type": null,
+            "content_block_index": null,
+            "json_pointer": "/result/events",
+            "operation": "select",
+            "output_field": "index_error_summary",
+            "evidence_tool_argument_names": [
+              "earliest_time",
+              "latest_time"
+            ],
+            "maximum_response_characters": 200000,
+            "maximum_collection_items": 50
+          }
+        }
+      ]
+    }
+  ]
+}

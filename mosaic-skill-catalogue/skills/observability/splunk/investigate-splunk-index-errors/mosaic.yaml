@@ -1,0 +1,8 @@
+schema_version: 1
+version: 1.0.0
+kind: procedural
+required_capability_names:
+  - splunk.index.errors.read
+optional_capability_names:
+  - splunk.index.activity.count
+  - splunk.indexes.read
