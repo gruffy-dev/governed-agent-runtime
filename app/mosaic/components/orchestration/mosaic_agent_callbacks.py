@@ -62,21 +62,29 @@ class MosaicAgentCallbacks(BaseModel):
         callback_context: Context,
         llm_request: LlmRequest,
     ) -> LlmResponse | None:
-        """Force bounded skill discovery before the first model inference.
-
-        Args:
-            callback_context: ADA context for the current model invocation.
-            llm_request: Prepared request that will be skipped for discovery.
-
-        Returns:
-            A synthetic ``discover_skills`` function call for a new goal,
-            otherwise ``None`` to continue normal model processing.
-
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the invocation is stale.
-            pydantic.ValidationError: If ADK rejects the synthetic response.
         """
+        End clarification turns or force discovery before model inference.
+
+        :param callback_context: ADA context for the current model invocation.
+        :param llm_request: Prepared request skipped for clarification or discovery.
+
+        :return: A final clarification question, an initial discovery call, or
+            ``None`` to allow normal model inference.
+
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If the invocation is stale.
+        :raises pydantic.ValidationError: If ADK rejects the synthetic response.
+        """
+        question = self.orchestration_controller.pending_clarification_question(
+            callback_context
+        )
+        if question is not None:
+            from google.adk.models import LlmResponse as AdkLlmResponse
+
+            return AdkLlmResponse.model_validate(
+                {'content': {'role': 'model', 'parts': [{'text': question}]}}
+            )
+
         if not self.orchestration_controller.skill_discovery_required(callback_context):
             return None
 

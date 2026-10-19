@@ -73,6 +73,10 @@ class TestTargetAwareRuntimeIntegration(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(unresolved['status'], 'target_required')
         self.assertFalse(self._state(context).capability_discovery_attempted)
+        self.assertEqual(self._state(context).phase, 'awaiting_clarification')
+        controller.after_agent_callback(context)
+        context.invocation_id = 'invocation-2'
+        controller.before_agent_callback(context)
 
         discovered = discovery_service.discover_capabilities(
             context,

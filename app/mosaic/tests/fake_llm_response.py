@@ -40,28 +40,21 @@ class FakeLlmResponse:
 
     @classmethod
     def model_validate(cls, value: dict[str, object]) -> 'FakeLlmResponse':
-        """Parse the callback's ADK-shaped replacement response.
-
-        Args:
-            value: Serialized response containing one function-call part.
-
-        Returns:
-            Fake response exposing the parsed function call.
-
-        Raises:
-            AssertionError: If the serialized response shape is invalid.
-        """
         content = value['content']
         assert isinstance(content, dict)
         raw_parts = content['parts']
         assert isinstance(raw_parts, list)
-        raw_function_call = raw_parts[0]['function_call']
-        return cls(
-            content=SimpleNamespace(
-                parts=[
-                    SimpleNamespace(
-                        function_call=SimpleNamespace(**raw_function_call)
-                    )
-                ]
+        parts = []
+        for raw_part in raw_parts:
+            function_call = raw_part.get('function_call')
+            parts.append(
+                SimpleNamespace(
+                    text=raw_part.get('text'),
+                    function_call=(
+                        SimpleNamespace(**function_call) if function_call else None
+                    ),
+                )
             )
+        return cls(
+            content=SimpleNamespace(parts=parts)
         )

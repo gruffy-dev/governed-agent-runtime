@@ -148,6 +148,26 @@ class OrchestrationTransitionController(BaseModel):
             if outcome != 'success'
         }
 
+    def pending_clarification_question(
+        self,
+        callback_context: CallbackContextProtocol,
+    ) -> str | None:
+        """
+        Return the question that must end the current invocation.
+
+        :param callback_context: ADA context for the current invocation.
+
+        :return: The pending question, or ``None`` during active execution.
+
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If another invocation owns
+            the active goal.
+        """
+        current = self._require_active_state(callback_context)
+        if current.phase != 'awaiting_clarification':
+            return None
+        return current.clarification_question or 'What information should I use?'
+
     def skill_discovery_required(
         self,
         callback_context: CallbackContextProtocol,
@@ -297,7 +317,7 @@ class OrchestrationTransitionController(BaseModel):
         tool_response: dict[str, object],
     ) -> None:
         """
-        Commit successful tool transitions to ADA-managed session state.
+        Commit tool transitions and pause when required user input is missing.
 
         :param tool: ADA tool that completed.
         :param args: Semantic arguments supplied to the tool.
@@ -311,6 +331,23 @@ class OrchestrationTransitionController(BaseModel):
             the active invocation.
         """
         current = self._require_active_state(tool_context)
+        if current.phase == 'awaiting_clarification':
+            if tool.name == 'execute_capability':
+                self._record_capability_result(args, tool_context, tool_response, current)
+            return
+
+        question = self._missing_input_question(tool, args, tool_response, current)
+        if question is not None:
+            self._write_state(
+                tool_context,
+                current.model_copy(
+                    update={
+                        'phase': 'awaiting_clarification',
+                        'clarification_question': question,
+                    }
+                ),
+            )
+            return
 
         if tool.name == 'discover_skills':
             if (
@@ -464,6 +501,64 @@ class OrchestrationTransitionController(BaseModel):
                     }
                 ),
             )
+
+    def _missing_input_question(
+        self,
+        tool: ToolProtocol,
+        args: dict[str, object],
+        tool_response: dict[str, object],
+        current: OrchestrationState,
+    ) -> str | None:
+        """
+        Turn recognised missing-input outcomes into a clarification question.
+
+        :param tool: Tool that returned the outcome.
+        :param args: Semantic arguments supplied to the tool.
+        :param tool_response: Provider-free discovery or execution result.
+        :param current: Validated goal state before the tool transition.
+
+        :return: A question for missing input, or ``None`` for other outcomes.
+
+        :raises pydantic.ValidationError: If ambiguous target metadata is invalid.
+        """
+        if not current.skill_batch_loaded:
+            return None
+        status = tool_response.get('status')
+        if (
+            tool.name == 'discover_capabilities'
+            and not current.capability_discovery_attempted
+        ):
+            if status == 'target_required':
+                return 'Which configured platform would you like me to check?'
+            if status == 'target_unknown':
+                return (
+                    'That platform is not recognised. '
+                    'Which configured platform would you like me to check?'
+                )
+            if status == 'target_ambiguous':
+                candidates = tool_response.get('candidate_targets')
+                if isinstance(candidates, list) and candidates:
+                    names = [
+                        TargetResolutionCandidate.model_validate(item).display_name
+                        for item in candidates
+                    ]
+                    return 'Which platform should I use: ' + ', '.join(names) + '?'
+                return 'Which configured platform would you like me to check?'
+        if (
+            tool.name == 'execute_capability'
+            and current.capability_discovery_completed
+            and status == 'missing_arguments'
+            and args.get('capability_name') in current.candidate_capability_names
+            and tool_response.get('target_id') == current.target_id
+        ):
+            names = self._normalized_names(
+                tool_response.get('missing_semantic_argument_names')
+            )
+            if names:
+                return 'Please provide the missing information: ' + ', '.join(
+                    name.replace('_', ' ') for name in names
+                ) + '.'
+        return None
 
     def _read_state(
         self,

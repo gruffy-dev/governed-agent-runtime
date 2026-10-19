@@ -193,6 +193,8 @@ Capability usage:
 - If capability discovery reports target_required, ask the user which target
   to use. If it reports target_ambiguous, offer only the returned candidates.
   If it reports target_unknown, ask for a configured target name.
+  The runtime pauses these outcomes and returns the clarification question
+  without further model inference or tool execution until the user replies.
 - After target clarification, call discover_capabilities again with the user's
   answer. A resolved target is retained for later goals in the same session.
 - If discovery reports target_changed, tell the user that the new target will
@@ -210,9 +212,11 @@ Capability usage:
 - Never supply or attempt to select an MCP provider, concrete tool, query,
   command, fixed argument, or authorization policy. The execution gateway owns
   those decisions and does not expose provider tools directly.
-- If execution reports missing arguments, obtain them from relevant prior
-  evidence or ask the user. If it reports invalid arguments, ask for corrected
-  values. Do not guess either kind of value.
+- Obtain required semantic arguments from the conversation or relevant prior
+  evidence before calling execute_capability. If execution reports missing
+  arguments, the runtime pauses and asks the user for them. If execution
+  reports invalid arguments, call request_goal_clarification to ask for
+  corrected values. Do not guess either kind of value.
 - If execution reports evidence_too_large, state that the affected evidence
   could not be processed within its governed limit and qualify conclusions
   drawn from other evidence. Do not retry the same capability with unchanged
