@@ -86,7 +86,8 @@ class SkillDiscoveryAndLoader(BaseModel):
         skill_names: list[str],
         tool_context: CallbackContextProtocol,
     ) -> dict[str, object]:
-        """Load a complete set of approved skills by their exact names.
+        """
+        Load a complete set of approved skills by their exact names.
 
         Use this tool after decomposing the user's goal and identifying every
         relevant skill returned by ``discover_skills``. Each loaded skill
@@ -94,14 +95,12 @@ class SkillDiscoveryAndLoader(BaseModel):
         are absent or unauthorised share the same non-revealing not-found
         result.
 
-        Args:
-            skill_names: Exact skill names selected from the available skill
-                catalogue. Duplicate names are loaded only once.
-            tool_context: ADA-injected context excluded from the model schema.
+        :param skill_names: Exact skill names selected from the available skill
+            catalogue. Duplicate names are loaded only once.
+        :param tool_context: ADA-injected context excluded from the model schema.
 
-        Returns:
-            A dictionary containing the overall status, every successfully
-            loaded serialized skill, and any names that were not found. The
+        :return: A dictionary containing the overall status, every successfully
+            loaded serialised skill, and any names that were not found. The
             status is ``loaded``, ``not_found``, or ``limit_exceeded``.
             A failed batch never returns partial full-skill content. Unknown
             and unauthorised names share the same non-revealing outcome.
@@ -148,7 +147,7 @@ class SkillDiscoveryAndLoader(BaseModel):
                 'not_found_skill_names': not_found_skill_names,
             }
 
-        serialized_characters = len(
+        serialised_characters = len(
             json.dumps(
                 candidate_loaded_skills,
                 ensure_ascii=False,
@@ -156,7 +155,7 @@ class SkillDiscoveryAndLoader(BaseModel):
             )
         )
         if (
-            serialized_characters
+            serialised_characters
             > configuration.maximum_loaded_skill_characters
         ):
             return self._load_limit_exceeded_result(

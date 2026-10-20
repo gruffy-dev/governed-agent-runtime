@@ -18,7 +18,6 @@ class TestGitSkillCatalogueConfiguration(unittest.TestCase):
     def test_environment_configuration_excludes_credentials_from_dump(
         self,
     ) -> None:
-        """Credentials load from environment but never serialize."""
         environment = {
             'MOSAIC_SKILLS_REPOSITORY_URL': (
                 'https://bitbucket.example/skills.git'

@@ -27,7 +27,6 @@ from mosaic.tests.fake_llm_response import FakeLlmResponse
 
 
 class TestMosaicAgentCallbacks(unittest.TestCase):
-    """Verify profile binding precedes goal-state initialization."""
 
     def test_before_agent_binds_profile_and_starts_goal(self) -> None:
         """One callback persists both trusted session and goal state."""

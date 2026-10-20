@@ -26,7 +26,7 @@ class AgentSkillFrontmatter(BaseModel):
     )
     license: str | None = Field(
         default=None,
-        description='Optional license name or bundled license-file reference.',
+        description='Optional licence name or bundled licence-file reference.',
         min_length=1,
     )
     compatibility: str | None = Field(

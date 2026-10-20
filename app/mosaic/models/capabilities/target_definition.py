@@ -51,8 +51,8 @@ class TargetDefinition(BaseModel):
                 'Target aliases must be unqualified values of 1-100 '
                 'characters.'
             )
-        normalized_aliases = [alias.casefold() for alias in self.aliases]
-        if len(normalized_aliases) != len(set(normalized_aliases)):
+        normalised_aliases = [alias.casefold() for alias in self.aliases]
+        if len(normalised_aliases) != len(set(normalised_aliases)):
             raise ValueError(
                 'Target aliases must be case-insensitively unique.'
             )

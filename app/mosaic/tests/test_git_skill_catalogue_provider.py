@@ -21,7 +21,7 @@ from mosaic.models.skills.git_skill_catalogue_configuration import (
 class TestGitSkillCatalogueProvider(unittest.TestCase):
     """Verify live refresh, immutable activation, and safe fallback."""
 
-    def test_valid_remote_commit_is_synchronized(self) -> None:
+    def test_valid_remote_commit_is_synchronised(self) -> None:
         """The provider clones and activates a validated remote commit."""
         with TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -31,7 +31,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
                 temporary_root / 'cache.git',
             )
 
-            snapshot = provider.synchronize()
+            snapshot = provider.synchronise()
 
             self.assertEqual(snapshot, provider.get_snapshot())
             self.assertEqual(
@@ -40,8 +40,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             )
             self.assertEqual(snapshot.skills[0].version, '1.0.0')
 
-    def test_synchronization_does_not_require_git_executable(self) -> None:
-        """Dulwich synchronizes successfully with no executable search path."""
+    def test_synchronisation_does_not_require_git_executable(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             repository_path = self._create_repository(temporary_root)
@@ -51,7 +50,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             )
 
             with patch.dict(os.environ, {'PATH': ''}):
-                snapshot = provider.synchronize()
+                snapshot = provider.synchronise()
 
             self.assertEqual(snapshot.skills[0].name, 'investigate-platform')
 
@@ -63,7 +62,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             cache_path = temporary_root / 'cache.git'
             provider = self._create_provider(repository_path, cache_path)
 
-            provider.synchronize()
+            provider.synchronise()
 
             cache_configuration = (cache_path / 'config').read_text(
                 encoding='utf-8'
@@ -83,11 +82,11 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
                 repository_path,
                 temporary_root / 'cache.git',
             )
-            first_snapshot = provider.synchronize()
+            first_snapshot = provider.synchronise()
             self._write_package(repository_path, version='1.1.0')
             self._commit(repository_path, 'Update skill')
 
-            second_snapshot = provider.synchronize()
+            second_snapshot = provider.synchronise()
 
             self.assertNotEqual(
                 first_snapshot.commit_sha,
@@ -102,7 +101,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             repository_path = self._create_repository(temporary_root)
             cache_path = temporary_root / 'cache.git'
             provider = self._create_provider(repository_path, cache_path)
-            first_snapshot = provider.synchronize()
+            first_snapshot = provider.synchronise()
             metadata_path = (
                 repository_path
                 / 'skills'
@@ -117,12 +116,12 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             )
             self._commit(repository_path, 'Invalid skill')
 
-            retained_snapshot = provider.synchronize()
+            retained_snapshot = provider.synchronise()
             restarted_provider = self._create_provider(
                 repository_path,
                 cache_path,
             )
-            restarted_snapshot = restarted_provider.synchronize()
+            restarted_snapshot = restarted_provider.synchronise()
 
             self.assertEqual(retained_snapshot, first_snapshot)
             self.assertEqual(
@@ -137,7 +136,7 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
             repository_path = self._create_repository(temporary_root)
             cache_path = temporary_root / 'cache.git'
             provider = self._create_provider(repository_path, cache_path)
-            first_snapshot = provider.synchronize()
+            first_snapshot = provider.synchronise()
             unavailable_repository_path = temporary_root / 'offline-repository'
             repository_path.rename(unavailable_repository_path)
             restarted_provider = self._create_provider(
@@ -145,15 +144,14 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
                 cache_path,
             )
 
-            recovered_snapshot = restarted_provider.synchronize()
+            recovered_snapshot = restarted_provider.synchronise()
 
             self.assertEqual(
                 recovered_snapshot.commit_sha,
                 first_snapshot.commit_sha,
             )
 
-    def test_get_snapshot_requires_prior_synchronization(self) -> None:
-        """Read-only access fails clearly before initial synchronization."""
+    def test_get_snapshot_requires_prior_synchronisation(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             provider = self._create_provider(
@@ -165,14 +163,6 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
                 provider.get_snapshot()
 
     def _create_repository(self, temporary_root: Path) -> Path:
-        """Create a local Git repository containing one valid skill.
-
-        Args:
-            temporary_root: Temporary directory containing test resources.
-
-        Returns:
-            Path of the initialized source repository.
-        """
         repository_path = temporary_root / 'repository'
         repository = porcelain.init(repository_path)
         repository.refs.set_symbolic_ref(b'HEAD', b'refs/heads/main')

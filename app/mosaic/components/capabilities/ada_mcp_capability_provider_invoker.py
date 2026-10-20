@@ -41,21 +41,19 @@ class AdaMcpCapabilityProviderInvoker(CapabilityProviderInvoker):
         tool_arguments: dict[str, JsonValue],
         tool_context: CallbackContextProtocol,
     ) -> dict[str, object]:
-        """Invoke one exact allowlisted MCP tool and close its toolset.
+        """
+        Invoke one exact allowlisted MCP tool and close its toolset.
 
-        Args:
-            provider_name: Approved provider selected by capability metadata.
-            tool_name: Approved exact MCP tool name.
-            tool_arguments: Fully prepared concrete MCP arguments.
-            tool_context: Active ADK context carrying request-scoped headers.
+        :param provider_name: Approved provider selected by capability metadata.
+        :param tool_name: Approved exact MCP tool name.
+        :param tool_arguments: Fully prepared concrete MCP arguments.
+        :param tool_context: Active ADK context carrying request-scoped headers.
 
-        Returns:
-            Raw serialized MCP call result for governed result processing.
+        :return: Raw serialised MCP call result for governed result processing.
 
-        Raises:
-            LookupError: If provider or tool is outside the trusted allowlist.
-            RuntimeError: If MCP reports an error result.
-            TypeError: If ADK returns an unexpected result shape.
+        :raises LookupError: If provider or tool is outside the trusted allowlist.
+        :raises RuntimeError: If MCP reports an error result.
+        :raises TypeError: If ADK returns an unexpected result shape.
         """
         if provider_name != self.configuration.provider_name:
             raise LookupError('The selected MCP provider is not configured.')

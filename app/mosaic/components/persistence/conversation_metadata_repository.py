@@ -63,7 +63,7 @@ class ConversationMetadataRepository:
         Read creation time only within the trusted application and user scope.
 
         A missing or foreign UUID returns the same absence result. SQLite
-        returns naive stored datetimes; writes are normalized to UTC, so attach
+        returns naive stored datetimes; writes are normalised to UTC, so attach
         UTC on read without inferring any conversation timestamp from history.
 
         :param context: Trusted application and user identity.

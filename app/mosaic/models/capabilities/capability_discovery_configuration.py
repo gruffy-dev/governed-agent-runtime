@@ -30,7 +30,7 @@ class CapabilityDiscoveryConfiguration(BaseModel):
             'MOSAIC_CAPABILITIES_MAXIMUM_METADATA_CHARACTERS',
             16000,
         ),
-        description='Maximum serialized candidate metadata for one goal.',
+        description='Maximum serialised candidate metadata for one goal.',
         gt=0,
         le=1000000,
     )

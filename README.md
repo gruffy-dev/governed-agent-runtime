@@ -568,7 +568,7 @@ user-facing concept is the Integration manifest.
 | `MOSAIC_CAPABILITY_RESULT_MAXIMUM_RESPONSE_CHARACTERS` | Deployment-wide ceiling for one encoded Provider response. |
 | `MOSAIC_CAPABILITY_RESULT_MAXIMUM_COLLECTION_ITEMS` | Deployment-wide ceiling for one selected Evidence collection. |
 | `MOSAIC_CAPABILITIES_MAXIMUM_CANDIDATE_COUNT` | Maximum number of skill-declared Capabilities exposed for one Goal. |
-| `MOSAIC_CAPABILITIES_MAXIMUM_METADATA_CHARACTERS` | Maximum serialized Capability metadata exposed for one Goal. |
+| `MOSAIC_CAPABILITIES_MAXIMUM_METADATA_CHARACTERS` | Maximum serialised Capability metadata exposed for one Goal. |
 | `MOSAIC_SKILLS_MAXIMUM_ENABLED_SKILL_COUNT` | Maximum number of Skills authorised by one Skill profile. |
 | `MOSAIC_SKILLS_MAXIMUM_DISCOVERY_METADATA_CHARACTERS` | Maximum Skill metadata exposed during discovery. |
 | `MOSAIC_SKILLS_MAXIMUM_LOADED_SKILL_COUNT` | Maximum Skills loaded for one Goal. |
@@ -667,7 +667,7 @@ Skills; unknown or withdrawn catalogue references cannot be loaded.
 The existing discovery and loading limit environment variables remain in use.
 Deployment profile variables (`MOSAIC_SKILLS_PROFILES`,
 `MOSAIC_SKILLS_DEFAULT_PROFILE_ID`, and
-`MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS`) no longer authorize the normal
+`MOSAIC_SKILLS_SESSION_PROFILE_ASSIGNMENTS`) no longer authorise the normal
 agent. The legacy resolver remains available only when explicitly composed
 separately; it is never a fallback for workspace binding. Direct ADK dev-UI
 sessions without an enabled owner and public conversation metadata cannot bind
@@ -986,10 +986,10 @@ OpenShift Skills.
 
 Those Skills cover common areas such as workload inspection, rollout failure,
 service connectivity, storage failure, ingress, capacity, platform health, and
-time-bounded observability signals. The generated artifacts preserve MOSAIC's
+time-bounded observability signals. The generated artefacts preserve MOSAIC's
 separation of responsibilities:
 
-| Generated artifact | Purpose |
+| Generated artefact | Purpose |
 | --- | --- |
 | `SKILL.md` | Describes when a Skill applies, the inspection or investigation it performs, the evidence standards it follows, and its safety constraints without exposing provider-specific tools. |
 | `mosaic.yaml` | Declares the Skill's required and optional Capability requirements. |
@@ -1209,7 +1209,7 @@ Rules:
   silent truncation.
 - If an authoritative deployment fact is missing, use a clearly marked
   placeholder only in an example candidate, put it in the separate generation
-  report, and do not describe the artifact as activation-ready.
+  report, and do not describe the artefact as activation-ready.
 - Do not modify or publish an existing approved catalogue. Write the candidate
   files to a separate review directory.
 
@@ -1266,7 +1266,7 @@ The current MVP has deliberate boundaries:
 - Caller-supplied user, session, application, and header values are not proof
   of identity. Authentication must occur at a trusted boundary ahead of ADA.
 - The current MCP header path transports identity-related values but is not an
-  end-to-end OAuth delegation or authorization solution.
+  end-to-end OAuth delegation or authorisation solution.
 - Resource-level RBAC remains the responsibility of each MCP server and its
   backend.
 - The present development Kubernetes integration uses a configured kubeconfig
@@ -1310,7 +1310,7 @@ Longer-term platform work includes:
   target/provider/capability/skill bindings;
 - atomic distribution and hot reload of immutable runtime snapshots;
 - scalable progressive evidence, pagination, refinement, and optional governed
-  evidence artifacts;
+  evidence artefacts;
 - explicit multi-target queries and same-target provider failover; and
 - deterministic workflows and authenticated human approval gates for
   high-risk or mutating operations.

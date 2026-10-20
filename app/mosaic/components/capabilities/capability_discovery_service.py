@@ -34,7 +34,8 @@ class CapabilityDiscoveryService(BaseModel):
         tool_context: CallbackContextProtocol,
         target_name: str | None = None,
     ) -> dict[str, object]:
-        """Expose the bounded capability set declared by loaded skills.
+        """
+        Expose the bounded capability set declared by loaded skills.
 
         Call this once after loading the complete relevant skill batch and
         before capability execution. Only required and optional capability
@@ -42,21 +43,18 @@ class CapabilityDiscoveryService(BaseModel):
         runtime snapshot. The model cannot add names or search the wider
         capability registry.
 
-        Args:
-            tool_context: ADA-injected context excluded from the model schema.
-            target_name: Optional user-supplied target alias, display name, or
-                canonical identity. Provider endpoints are never accepted.
+        :param tool_context: ADA-injected context excluded from the model schema.
+        :param target_name: Optional user-supplied target alias, display name, or
+            canonical identity. Provider endpoints are never accepted.
 
-        Returns:
-            Provider-free semantic capability metadata for this goal only.
+        :return: Provider-free semantic capability metadata for this goal only.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            pydantic.ValidationError: If persisted state is malformed.
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises pydantic.ValidationError: If persisted state is malformed.
         """
         raw_state = tool_context.state.get(self.orchestration_state_key)
         if raw_state is None:
-            raise RuntimeError('MOSAIC orchestration state is not initialized.')
+            raise RuntimeError('MOSAIC orchestration state is not initialised.')
         state = OrchestrationState.model_validate(raw_state)
         if not state.skill_batch_loaded:
             return {

@@ -15,36 +15,34 @@ class GoalOrchestrationTools(BaseModel):
         self,
         missing_required_capability_names: list[str],
     ) -> dict[str, object]:
-        """Return a runtime reminder when the model finishes prematurely.
+        """
+        Return a runtime reminder when the model finishes prematurely.
 
         This tool is invoked by the completion guard rather than selected by
         the model. Its response starts another ADK model step with the exact
         required capabilities that remain outstanding.
 
-        Args:
-            missing_required_capability_names: Required capability names that
-                have not reached a terminal execution status.
+        :param missing_required_capability_names: Required capability names that
+            have not reached a terminal execution status.
 
-        Returns:
-            A continuation directive containing normalized missing names.
+        :return: A continuation directive containing normalised missing names.
 
-        Raises:
-            ValueError: If no non-empty capability name was supplied.
+        :raises ValueError: If no non-empty capability name was supplied.
         """
-        normalized_names = list(
+        normalised_names = list(
             dict.fromkeys(
                 name.strip().lower()
                 for name in missing_required_capability_names
                 if isinstance(name, str) and name.strip()
             )
         )
-        if not normalized_names:
+        if not normalised_names:
             raise ValueError(
                 'missing_required_capability_names must not be empty.'
             )
         return {
             'status': 'capability_execution_required',
-            'missing_required_capability_names': normalized_names,
+            'missing_required_capability_names': normalised_names,
             'message': (
                 'Execute every listed required capability before responding. '
                 'If a required input is unavailable, call '
@@ -70,10 +68,10 @@ class GoalOrchestrationTools(BaseModel):
         Raises:
             ValueError: If the question is empty or contains only whitespace.
         """
-        normalized_question = question.strip()
-        if not normalized_question:
+        normalised_question = question.strip()
+        if not normalised_question:
             raise ValueError('question must not be empty.')
         return {
             'status': 'awaiting_clarification',
-            'question': normalized_question,
+            'question': normalised_question,
         }

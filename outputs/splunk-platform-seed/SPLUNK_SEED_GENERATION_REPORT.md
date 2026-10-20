@@ -96,7 +96,7 @@ behaviour and is not a complete distributed Splunk health assessment.
 - Original activity/error searches retain their fixed fifteen-minute window.
   New searches accept only `15m`, `30m` or `1h`, with identical SPL and REST
   time bounds. They do not support arbitrary historical intervals.
-- Query, maximum count, output format, risk tolerance, and sanitization are
+- Query, maximum count, output format, risk tolerance, and sanitisation are
   fixed by the binding and cannot be overridden by the model.
 - New semantic values are exact namespace, pod or non-secret request names
   and one enumerated window. Full-match patterns exclude SPL syntax. The
@@ -181,7 +181,7 @@ Expansion validation:
 
 Live validation completed:
 
-- Streamable HTTP initialization and `tools/list` completed successfully.
+- Streamable HTTP initialisation and `tools/list` completed successfully.
 - `get_indexes` completed successfully against Splunk 9.1.
 - Live results confirmed the `structuredContent.result` wrapper used by the
   generated JSON pointers.
@@ -190,7 +190,7 @@ Validation still required before approval:
 
 1. Exercise all four Capabilities through MOSAIC against the live endpoint.
 2. Confirm the fixed searches return the expected `result.events` shapes for
-   normal, empty, unauthorized, timeout, and oversized cases.
+   normal, empty, unauthorised, timeout, and oversized cases.
 3. Confirm the Splunk service identity cannot access indexes outside the pilot
    boundary and has no mutation capabilities.
 4. Replace `localhost` with the approved private endpoint before separating
@@ -206,7 +206,7 @@ Validation still required before approval:
 ## Known limitations
 
 - The MCP endpoint has no inbound authentication.
-- The server's output sanitization only masks credit-card-like numbers and US
+- The server's output sanitisation only masks credit-card-like numbers and US
   Social Security numbers; it is not a general data-loss-prevention control.
 - `search_oneshot` permits broad queries at the provider layer. MOSAIC's fixed
   bindings and the Splunk account's permissions are required controls.

@@ -43,7 +43,7 @@ class MCPExecutionGateway(BaseModel):
     )
     observability: CapabilityExecutionObservability = Field(
         default_factory=CapabilityExecutionObservability,
-        description='Centralized safe capability lifecycle observability.',
+        description='Centralised safe capability lifecycle observability.',
     )
     execution_timeout_seconds: float = Field(
         default=30.0,
@@ -58,7 +58,8 @@ class MCPExecutionGateway(BaseModel):
         semantic_arguments: dict[str, JsonValue],
         tool_context: CallbackContextProtocol,
     ) -> dict[str, object]:
-        """Execute one semantic capability through the governed boundary.
+        """
+        Execute one semantic capability through the governed boundary.
 
         Supply only semantic values from the user's context or trusted prior
         evidence. This gateway selects the provider, prepares concrete
@@ -67,22 +68,20 @@ class MCPExecutionGateway(BaseModel):
         calls. The caller cannot select an MCP server, tool, query, command,
         or fixed argument directly.
 
-        Args:
-            capability_name: Approved semantic capability name from a loaded
-                skill or the current capability catalogue.
-            semantic_arguments: Runtime values keyed by the capability's
-                declared semantic input names.
-            tool_context: ADK-injected context for request-scoped MCP headers.
+        :param capability_name: Approved semantic capability name from a loaded
+            skill or the current capability catalogue.
+        :param semantic_arguments: Runtime values keyed by the capability's
+            declared semantic input names.
+        :param tool_context: ADK-injected context for request-scoped MCP headers.
 
-        Returns:
-            A serialized execution result containing provider evidence on
+        :return: A serialised execution result containing provider evidence on
             success or safe missing, invalid, unavailable, timeout, or failure
             information. Concrete provider arguments are never returned.
         """
         execution_started_at = perf_counter()
-        normalized_name = capability_name.strip().lower()
+        normalised_name = capability_name.strip().lower()
         target_id = self._goal_target_id(tool_context)
-        if not normalized_name:
+        if not normalised_name:
             result = CapabilityExecutionResult(
                 status='invalid_arguments',
                 capability_name='<empty>',
@@ -106,7 +105,7 @@ class MCPExecutionGateway(BaseModel):
             preparation = PreparedCapabilityInvocation.model_validate(
                 self.capability_catalogue_and_resolver
                 .prepare_capability_invocation(
-                    capability_name=normalized_name,
+                    capability_name=normalised_name,
                     semantic_arguments=semantic_arguments,
                     target_id=target_id,
                 )
@@ -114,7 +113,7 @@ class MCPExecutionGateway(BaseModel):
         except Exception as error:  # noqa: BLE001 - fail closed at boundary.
             self.observability.record(
                 event='capability_execution_failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 tool_context=tool_context,
                 execution_stage='preparation',
@@ -126,7 +125,7 @@ class MCPExecutionGateway(BaseModel):
             )
             return CapabilityExecutionResult(
                 status='failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 error_message='Capability preparation failed safely.',
             ).model_dump(mode='json')
@@ -135,7 +134,7 @@ class MCPExecutionGateway(BaseModel):
             result = self._build_non_ready_result(preparation, target_id)
             self.observability.record(
                 event='capability_execution_rejected',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 execution_status=result.status,
                 tool_context=tool_context,
@@ -154,7 +153,7 @@ class MCPExecutionGateway(BaseModel):
             )
             self.observability.record(
                 event='capability_execution_failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 tool_context=tool_context,
                 execution_stage='preparation',
@@ -166,14 +165,14 @@ class MCPExecutionGateway(BaseModel):
             )
             return CapabilityExecutionResult(
                 status='failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 error_message='Capability preparation failed safely.',
             ).model_dump(mode='json')
 
         self.observability.record(
             event='capability_provider_invocation_started',
-            capability_name=normalized_name,
+            capability_name=normalised_name,
             target_id=target_id,
             provider_name=provider_name,
             tool_name=tool_name,
@@ -194,7 +193,7 @@ class MCPExecutionGateway(BaseModel):
         except TimeoutError:
             self.observability.record(
                 event='capability_execution_timed_out',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 provider_name=provider_name,
                 tool_name=tool_name,
@@ -207,7 +206,7 @@ class MCPExecutionGateway(BaseModel):
             )
             return CapabilityExecutionResult(
                 status='timed_out',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 ignored_semantic_argument_names=(
                     preparation.ignored_semantic_argument_names
@@ -217,7 +216,7 @@ class MCPExecutionGateway(BaseModel):
         except Exception as error:  # noqa: BLE001 - isolate provider failures.
             self.observability.record(
                 event='capability_execution_failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 provider_name=provider_name,
                 tool_name=tool_name,
@@ -231,7 +230,7 @@ class MCPExecutionGateway(BaseModel):
             )
             return CapabilityExecutionResult(
                 status='failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 ignored_semantic_argument_names=(
                     preparation.ignored_semantic_argument_names
@@ -259,7 +258,7 @@ class MCPExecutionGateway(BaseModel):
                 )
             result = CapabilityExecutionResult(
                 status='success',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 evidence=evidence,
                 ignored_semantic_argument_names=(
@@ -276,7 +275,7 @@ class MCPExecutionGateway(BaseModel):
             )
             self.observability.record(
                 event='capability_execution_failed',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 provider_name=provider_name,
                 tool_name=tool_name,
@@ -296,7 +295,7 @@ class MCPExecutionGateway(BaseModel):
             )
             return CapabilityExecutionResult(
                 status=execution_status,
-                capability_name=normalized_name,
+                capability_name=normalised_name,
                 target_id=target_id,
                 ignored_semantic_argument_names=(
                     preparation.ignored_semantic_argument_names
@@ -310,7 +309,7 @@ class MCPExecutionGateway(BaseModel):
 
         self.observability.record(
             event='capability_execution_completed',
-            capability_name=normalized_name,
+            capability_name=normalised_name,
             target_id=target_id,
             provider_name=provider_name,
             tool_name=tool_name,

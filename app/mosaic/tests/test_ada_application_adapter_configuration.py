@@ -29,7 +29,7 @@ class TestAdaApplicationAdapterConfiguration(unittest.TestCase):
             {'response_queue_capacity': 0},
             {'maximum_response_bytes': -1},
             {'asgi_spec_version': '2.5'},
-            {'unrecognized': True},
+            {'unrecognised': True},
         ):
             with self.subTest(values=values), self.assertRaises(ValidationError):
                 AdaApplicationAdapterConfiguration(**values)

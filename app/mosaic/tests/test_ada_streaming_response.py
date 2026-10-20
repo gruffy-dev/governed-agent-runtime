@@ -176,7 +176,7 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                 result = await self._collect([body], bound=512)
                 self.assertEqual(result, [{'error': 'Invocation failed'}])
 
-    async def test_transport_failure_after_text_is_sanitized(self) -> None:
+    async def test_transport_failure_after_text_is_sanitised(self) -> None:
         response = await AdaStreamingResponse.create(
             self._stream([self._frame(self.record)], fail=True), 8192, 'mosaic'
         )

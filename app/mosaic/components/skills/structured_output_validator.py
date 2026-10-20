@@ -50,16 +50,15 @@ class StructuredOutputValidator(BaseModel):
         callback_context: Context,
         llm_request: LlmRequest,
     ) -> None:
-        """Constrain a final model response with its loaded output schema.
+        """
+        Constrain a final model response with its loaded output schema.
 
-        Args:
-            callback_context: ADA context for the current model request.
-            llm_request: ADA model request to constrain before execution.
+        :param callback_context: ADA context for the current model request.
+        :param llm_request: ADA model request to constrain before execution.
 
-        Raises:
-            RuntimeError: If goal orchestration state is not initialized.
-            ValueError: If multiple loaded output skills declare schemas.
-            pydantic.ValidationError: If persisted state is malformed.
+        :raises RuntimeError: If goal orchestration state is not initialised.
+        :raises ValueError: If multiple loaded output skills declare schemas.
+        :raises pydantic.ValidationError: If persisted state is malformed.
         """
         profile = self.profile_manager.ensure_profile(callback_context)
         orchestration_state = self._read_orchestration_state(
@@ -98,19 +97,17 @@ class StructuredOutputValidator(BaseModel):
         self,
         context: CallbackContextProtocol,
     ) -> OrchestrationState:
-        """Read the validated current goal state from ADA session state.
+        """
+        Read the validated current goal state from ADA session state.
 
-        Args:
-            context: ADA tool context containing persisted session state.
+        :param context: ADA tool context containing persisted session state.
 
-        Returns:
-            Validated orchestration state for the current goal.
+        :return: Validated orchestration state for the current goal.
 
-        Raises:
-            RuntimeError: If goal orchestration state is not initialized.
-            pydantic.ValidationError: If persisted state is malformed.
+        :raises RuntimeError: If goal orchestration state is not initialised.
+        :raises pydantic.ValidationError: If persisted state is malformed.
         """
         raw_state = context.state.get(self.orchestration_state_key)
         if raw_state is None:
-            raise RuntimeError('MOSAIC orchestration state is not initialized.')
+            raise RuntimeError('MOSAIC orchestration state is not initialised.')
         return OrchestrationState.model_validate(raw_state)

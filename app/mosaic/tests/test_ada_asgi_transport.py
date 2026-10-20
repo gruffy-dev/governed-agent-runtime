@@ -138,7 +138,7 @@ class TestAdaAsgiTransport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 404)
         self.assertNotIn('synthetic-private-diagnostic', str(caught.exception))
 
-    async def test_failed_or_incomplete_app_is_sanitized(self) -> None:
+    async def test_failed_or_incomplete_app_is_sanitised(self) -> None:
         for failure in ('before', 'after', 'incomplete'):
             with self.subTest(failure=failure):
 

@@ -8,7 +8,7 @@ from ...models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 class SkillCatalogueProviderProtocol(Protocol):
     """Supply validated skill snapshots to the MOSAIC runtime."""
 
-    def synchronize(self) -> SkillCatalogueSnapshot:
+    def synchronise(self) -> SkillCatalogueSnapshot:
         """Synchronise the backing source and return the active snapshot.
 
         Returns:

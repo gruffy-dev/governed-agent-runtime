@@ -58,9 +58,9 @@ class GitSkillCatalogueProvider:
         self._configuration = configuration
         self._package_parser = package_parser
         self._snapshot: SkillCatalogueSnapshot | None = None
-        self._synchronization_lock = threading.Lock()
+        self._synchronisation_lock = threading.Lock()
 
-    def synchronize(self) -> SkillCatalogueSnapshot:
+    def synchronise(self) -> SkillCatalogueSnapshot:
         """Fetch, validate, and atomically activate a catalogue commit.
 
         Returns:
@@ -70,7 +70,7 @@ class GitSkillCatalogueProvider:
         Raises:
             RuntimeError: If no valid snapshot can be supplied.
         """
-        with self._synchronization_lock:
+        with self._synchronisation_lock:
             cache_preexisted = self._cache_path.exists()
             try:
                 self._ensure_repository_cache()
@@ -118,16 +118,16 @@ class GitSkillCatalogueProvider:
         """
         if self._snapshot is None:
             raise RuntimeError(
-                'The skill catalogue has not been synchronized.'
+                'The skill catalogue has not been synchronised.'
             )
         return self._snapshot
 
     @property
     def _cache_path(self) -> Path:
-        """Return the normalized deployment-local repository path.
+        """
+        Return the normalised deployment-local repository path.
 
-        Returns:
-            Absolute cache path from trusted configuration.
+        :return: Absolute cache path from trusted configuration.
         """
         return self._configuration.repository_cache_path.expanduser()
 
@@ -528,10 +528,10 @@ class GitSkillCatalogueProvider:
             ) from error
 
     def _build_transport_configuration(self) -> ConfigDict:
-        """Create in-memory Dulwich configuration for Git transport.
+        """
+        Create in-memory Dulwich configuration for Git transport.
 
-        Returns:
-            Configuration containing the timeout and Bearer authorization.
+        :return: Configuration containing the timeout and Bearer authorisation.
         """
         configuration = ConfigDict()
         configuration.set(

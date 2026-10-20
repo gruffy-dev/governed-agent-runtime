@@ -1,4 +1,3 @@
-"""Tests for centralized safe capability execution observability."""
 
 import unittest
 from types import SimpleNamespace

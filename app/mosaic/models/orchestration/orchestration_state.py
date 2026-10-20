@@ -49,7 +49,7 @@ class OrchestrationState(BaseModel):
     )
     requested_skill_names: tuple[str, ...] = Field(
         default=(),
-        description='Unique normalized skill names in the batch request.',
+        description='Unique normalised skill names in the batch request.',
     )
     loaded_skill_names: tuple[str, ...] = Field(
         default=(),

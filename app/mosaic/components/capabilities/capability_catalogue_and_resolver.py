@@ -272,21 +272,20 @@ class CapabilityCatalogueAndResolver(BaseModel):
         capability_names: list[str],
         target_id: str | None = None,
     ) -> dict[str, object]:
-        """Resolve semantic capabilities to allowed provider tools.
+        """
+        Resolve semantic capabilities to allowed provider tools.
 
         Use this tool once after loading the complete relevant skill set.
         Resolve every required capability and any optional capabilities that
         materially improve the user's outcome. Do not call a concrete provider
         tool unless this method returns that tool for its capability.
 
-        Args:
-            capability_names: Semantic capability names selected from loaded
-                skill requirements or the available capability catalogue.
-                Duplicate names are resolved only once.
-            target_id: Trusted canonical session target, when required.
+        :param capability_names: Semantic capability names selected from loaded
+            skill requirements or the available capability catalogue.
+            Duplicate names are resolved only once.
+        :param target_id: Trusted canonical session target, when required.
 
-        Returns:
-            A serialized capability-resolution result. Its status is
+        :return: A serialised capability-resolution result. Its status is
             ``resolved``, ``partially_resolved``, or ``unavailable``. Each
             resolution identifies the approved provider and concrete tool;
             unresolved names are returned without raising an exception.
@@ -362,30 +361,29 @@ class CapabilityCatalogueAndResolver(BaseModel):
         semantic_arguments: dict[str, JsonValue],
         target_id: str | None = None,
     ) -> dict[str, object]:
-        """Prepare approved arguments for one resolved capability call.
+        """
+        Prepare approved arguments for one resolved capability call.
 
         Fixed arguments come only from catalogue metadata and cannot be
         overridden by the caller. Semantic arguments are mapped, validated,
         and optionally composed into a provider-specific template. Unmapped
         caller inputs are reported and never forwarded to the provider.
 
-        Args:
-            capability_name: Semantic capability to prepare for invocation.
-            semantic_arguments: Goal or evidence values keyed by the semantic
-                input names declared by the selected provider binding.
-            target_id: Trusted canonical session target, when required.
+        :param capability_name: Semantic capability to prepare for invocation.
+        :param semantic_arguments: Goal or evidence values keyed by the semantic
+            input names declared by the selected provider binding.
+        :param target_id: Trusted canonical session target, when required.
 
-        Returns:
-            A serialized prepared invocation. A ``ready`` result identifies
+        :return: A serialised prepared invocation. A ``ready`` result identifies
             the provider tool and exact arguments to pass. Other statuses
             report unavailable capabilities or missing or invalid inputs.
         """
-        normalized_name = capability_name.strip().lower()
+        normalised_name = capability_name.strip().lower()
         capability = next(
             (
                 item
                 for item in self.capabilities
-                if item.name == normalized_name
+                if item.name == normalised_name
             ),
             None,
         )
@@ -397,7 +395,7 @@ class CapabilityCatalogueAndResolver(BaseModel):
         if provider_selection is None:
             return PreparedCapabilityInvocation(
                 status='unavailable',
-                capability_name=normalized_name,
+                capability_name=normalised_name,
             ).model_dump(mode='json')
         provider_binding, provider = provider_selection
 
@@ -486,7 +484,7 @@ class CapabilityCatalogueAndResolver(BaseModel):
 
         result = PreparedCapabilityInvocation(
             status=status,
-            capability_name=normalized_name,
+            capability_name=normalised_name,
             provider_name=provider.provider_name,
             tool_name=provider_binding.tool_name,
             tool_arguments=tool_arguments,

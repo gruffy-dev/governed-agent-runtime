@@ -8,7 +8,7 @@ class AuthenticationError(HTTPException):
         """
         Identify a MOSAIC authentication denial for the shared error handler.
 
-        :param status_code: Unauthorized or forbidden HTTP status.
+        :param status_code: Unauthorised or forbidden HTTP status.
 
         :raises ValueError: If the status is not an authentication denial.
         """

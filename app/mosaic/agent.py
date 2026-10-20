@@ -45,7 +45,7 @@ skill_catalogue_provider: SkillCatalogueProviderProtocol = GitSkillCatalogueProv
     configuration=GitSkillCatalogueConfiguration(),
     package_parser=SkillPackageParser(),
 )
-skill_catalogue_snapshot = skill_catalogue_provider.synchronize()
+skill_catalogue_snapshot = skill_catalogue_provider.synchronise()
 session_skill_profile_resolver = WorkspaceSkillProfileResolver(
     configuration=SkillLoadingConfiguration(),
     database_configuration=MosaicDatabaseConfiguration(),
@@ -181,7 +181,7 @@ Capability usage:
   capability, or suggest that MOSAIC has direct platform access.
 - Before calling execute_capability, complete skill discovery and load every
   relevant procedural and output skill in the single permitted skill batch.
-- Finalize skill selection before capability discovery. Once capability
+- Finalise skill selection before capability discovery. Once capability
   discovery has been attempted, no further skill loading is permitted.
 - After loading a skill batch that declares capabilities, call
   discover_capabilities. Retry it only after target clarification. The runtime
@@ -210,7 +210,7 @@ Capability usage:
   only its semantic capability name and semantic inputs from the user's context
   or earlier capability evidence.
 - Never supply or attempt to select an MCP provider, concrete tool, query,
-  command, fixed argument, or authorization policy. The execution gateway owns
+  command, fixed argument, or authorisation policy. The execution gateway owns
   those decisions and does not expose provider tools directly.
 - Obtain required semantic arguments from the conversation or relevant prior
   evidence before calling execute_capability. If execution reports missing

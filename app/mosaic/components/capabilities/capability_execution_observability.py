@@ -1,4 +1,3 @@
-"""Centralized safe observability for governed capability execution."""
 
 import json
 import logging
@@ -58,26 +57,26 @@ class CapabilityExecutionObservability:
         result_operation: str | None = None,
         error: Exception | None = None,
     ) -> None:
-        """Emit one event containing only explicitly approved metadata.
+        """
+        Emit one event containing only explicitly approved metadata.
 
-        Args:
-            event: Stable machine-readable lifecycle event name.
-            capability_name: Normalized semantic capability name.
-            tool_context: Request context supplying correlation identifiers.
-            execution_stage: Current capability lifecycle stage.
-            target_id: Canonical target pinned to the active goal, when any.
-            provider_name: Governed provider name, when known.
-            tool_name: Allowlisted provider tool name, when known.
-            execution_status: Safe execution outcome, when final or rejected.
-            duration_ms: Total elapsed execution time, when available.
-            provider_duration_ms: Provider call duration, when available.
-            mcp_content_block_count: Number of standard MCP content blocks.
-            mcp_structured_content_present: Whether structured content exists.
-            mcp_error_result: Whether the MCP result declared an error.
-            content_source: Declared result source selected by the binding.
-            content_media_type: Declared serialization of selected content.
-            result_operation: Deterministic result reduction operation.
-            error: Failure used only for its type and stack locations.
+        :param event: Stable machine-readable lifecycle event name.
+        :param capability_name: Normalised semantic capability name.
+        :param tool_context: Request context supplying correlation identifiers.
+        :param execution_stage: Current capability lifecycle stage.
+        :param target_id: Canonical target pinned to the active goal, when any.
+        :param provider_name: Governed provider name, when known.
+        :param tool_name: Allowlisted provider tool name, when known.
+        :param execution_status: Safe execution outcome, when final or rejected.
+        :param duration_ms: Total elapsed execution time, when available.
+        :param provider_duration_ms: Provider call duration, when available.
+        :param mcp_content_block_count: Number of standard MCP content blocks.
+        :param mcp_structured_content_present: Whether structured content exists.
+        :param mcp_error_result: Whether the MCP result declared an error.
+        :param content_source: Declared result source selected by the binding.
+        :param content_media_type: Declared serialisation of selected content.
+        :param result_operation: Deterministic result reduction operation.
+        :param error: Failure used only for its type and stack locations.
         """
         metadata: dict[str, object] = {
             'mosaic_event': event,

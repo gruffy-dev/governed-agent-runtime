@@ -220,7 +220,7 @@ class PilotAdministrationApi:
 
     def _authenticate(
         self,
-        authorization: Annotated[
+        authorisation: Annotated[
             str | None,
             Header(alias='Authorization'),
         ] = None,
@@ -228,15 +228,15 @@ class PilotAdministrationApi:
         """
         Require the dedicated administrator bearer secret.
 
-        :param authorization: Caller-supplied Authorization header.
+        :param authorisation: Caller-supplied Authorization header.
 
         :raises AuthenticationError: If the bearer credential is absent or invalid.
         """
         configured_secret = self._configuration.administrator_secret
-        if configured_secret is None or authorization is None:
+        if configured_secret is None or authorisation is None:
             raise AuthenticationError(status_code=403)
 
-        scheme, separator, supplied_secret = authorization.partition(' ')
+        scheme, separator, supplied_secret = authorisation.partition(' ')
         expected_secret = configured_secret.get_secret_value()
         if (
             separator != ' '

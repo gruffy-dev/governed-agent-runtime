@@ -20,7 +20,7 @@ class SkillLoadingConfiguration(BaseModel):
         ),
         gt=0,
         le=1000000,
-        description='Maximum serialized authorised Skill discovery metadata.',
+        description='Maximum serialised authorised Skill discovery metadata.',
     )
     maximum_loaded_skill_count: int = Field(
         default_factory=lambda: EnvironmentConfigurationReader.read_positive_integer(
@@ -36,5 +36,5 @@ class SkillLoadingConfiguration(BaseModel):
         ),
         gt=0,
         le=2000000,
-        description='Maximum serialized full Skill content loaded in one Goal.',
+        description='Maximum serialised full Skill content loaded in one Goal.',
     )

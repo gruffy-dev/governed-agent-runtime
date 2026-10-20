@@ -59,7 +59,7 @@ class AuthenticationFailureHandler:
         Generate correlation identifiers server-side. Never read or log
         request headers, cookies, paths, bodies, tokens or token hashes.
 
-        :param status_code: Unauthorized or forbidden HTTP status.
+        :param status_code: Unauthorised or forbidden HTTP status.
 
         :return: No-store error with matching body and header correlation IDs.
 
@@ -67,13 +67,13 @@ class AuthenticationFailureHandler:
         """
         if status_code not in {401, 403}:
             raise ValueError('Authentication status must be 401 or 403.')
-        unauthorized = status_code == 401
+        unauthorised = status_code == 401
         envelope = AuthenticationErrorResponse(
-            detail='Unauthorized' if unauthorized else 'Forbidden',
-            error_code='unauthorized' if unauthorized else 'forbidden',
+            detail='Unauthorized' if unauthorised else 'Forbidden',
+            error_code='unauthorized' if unauthorised else 'forbidden',
             action=(
                 'Sign in again or supply a valid bearer token.'
-                if unauthorized
+                if unauthorised
                 else 'Contact the administrator to check your access.'
             ),
             correlation_id=uuid4(),
@@ -93,7 +93,7 @@ class AuthenticationFailureHandler:
             'Cache-Control': 'no-store',
             'X-Correlation-ID': str(envelope.correlation_id),
         }
-        if unauthorized:
+        if unauthorised:
             headers['WWW-Authenticate'] = 'Bearer'
         return JSONResponse(
             status_code=status_code,

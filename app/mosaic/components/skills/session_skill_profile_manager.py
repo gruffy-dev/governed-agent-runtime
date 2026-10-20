@@ -84,7 +84,7 @@ class SessionSkillProfileManager(BaseModel):
             expected_profile = self.resolver.resolve(
                 identity, conversation_id, goal.goal_id
             )
-        serialized_profile = expected_profile.model_dump(mode='json')
-        if context.state.get(self.state_key) != serialized_profile:
-            context.state[self.state_key] = serialized_profile
+        serialised_profile = expected_profile.model_dump(mode='json')
+        if context.state.get(self.state_key) != serialised_profile:
+            context.state[self.state_key] = serialised_profile
         return expected_profile

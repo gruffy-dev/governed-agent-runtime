@@ -21,7 +21,7 @@ class CapabilityResultBinding(BaseModel):
         'application/yaml',
         'text/plain',
     ] | None = Field(
-        description='Serialization of selected text content, when applicable.',
+        description='Serialisation of selected text content, when applicable.',
     )
     content_block_index: int | None = Field(
         description='Zero-based MCP text block selected from content.',

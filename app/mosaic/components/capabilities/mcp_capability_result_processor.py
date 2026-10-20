@@ -29,21 +29,19 @@ class McpCapabilityResultProcessor(BaseModel):
         result_binding: CapabilityResultBinding,
         tool_arguments: dict[str, JsonValue],
     ) -> dict[str, JsonValue]:
-        """Apply one validated declarative provider-result binding.
+        """
+        Apply one validated declarative provider-result binding.
 
-        Args:
-            provider_result: Raw serialized MCP call result.
-            result_binding: Governed bounded reduction selected by capability.
-            tool_arguments: Prepared arguments supplied to the MCP tool.
+        :param provider_result: Raw serialised MCP call result.
+        :param result_binding: Governed bounded reduction selected by capability.
+        :param tool_arguments: Prepared arguments supplied to the MCP tool.
 
-        Returns:
-            Compact JSON-compatible evidence for model context.
+        :return: Compact JSON-compatible evidence for model context.
 
-        Raises:
-            ValueError: If content is absent, oversized, unsafe, or malformed.
-            TypeError: If the configured source or operation receives an
-                incompatible provider-result shape.
-            LookupError: If the configured JSON Pointer cannot be resolved.
+        :raises ValueError: If content is absent, oversized, unsafe, or malformed.
+        :raises TypeError: If the configured source or operation receives an
+            incompatible provider-result shape.
+        :raises LookupError: If the configured JSON Pointer cannot be resolved.
         """
         if provider_result.get('isError') is True:
             raise ValueError('The MCP provider reported an error result.')
@@ -83,19 +81,17 @@ class McpCapabilityResultProcessor(BaseModel):
         provider_result: dict[str, object],
         result_binding: CapabilityResultBinding,
     ) -> object:
-        """Extract and decode one standard MCP result source.
+        """
+        Extract and decode one standard MCP result source.
 
-        Args:
-            provider_result: Raw serialized MCP call result.
-            result_binding: Governed source and decoding configuration.
+        :param provider_result: Raw serialised MCP call result.
+        :param result_binding: Governed source and decoding configuration.
 
-        Returns:
-            JSON-compatible structured value or bounded plain text.
+        :return: JSON-compatible structured value or bounded plain text.
 
-        Raises:
-            ValueError: If configured content is absent, oversized, malformed,
-                unsafe, or not JSON-compatible.
-            TypeError: If MCP content has an incompatible container shape.
+        :raises ValueError: If configured content is absent, oversized, malformed,
+            unsafe, or not JSON-compatible.
+        :raises TypeError: If MCP content has an incompatible container shape.
         """
         if result_binding.content_source == 'structured_content':
             if 'structuredContent' not in provider_result:
@@ -133,19 +129,17 @@ class McpCapabilityResultProcessor(BaseModel):
         provider_result: dict[str, object],
         result_binding: CapabilityResultBinding,
     ) -> str:
-        """Extract one explicitly selected MCP text content block.
+        """
+        Extract one explicitly selected MCP text content block.
 
-        Args:
-            provider_result: Raw serialized MCP call result.
-            result_binding: Governed text-block selection configuration.
+        :param provider_result: Raw serialised MCP call result.
+        :param result_binding: Governed text-block selection configuration.
 
-        Returns:
-            Text from the explicitly selected MCP content block.
+        :return: Text from the explicitly selected MCP content block.
 
-        Raises:
-            ValueError: If the configured content block is absent.
-            TypeError: If the MCP content collection or selected block has an
-                incompatible shape.
+        :raises ValueError: If the configured content block is absent.
+        :raises TypeError: If the MCP content collection or selected block has an
+            incompatible shape.
         """
         content = provider_result.get('content')
         if not isinstance(content, list):
@@ -167,14 +161,13 @@ class McpCapabilityResultProcessor(BaseModel):
         encoded_result: str,
         result_binding: CapabilityResultBinding,
     ) -> None:
-        """Reject provider evidence above its declared character limit.
+        """
+        Reject provider evidence above its declared character limit.
 
-        Args:
-            encoded_result: Serialized provider evidence to measure.
-            result_binding: Governed response-character limit.
+        :param encoded_result: Serialised provider evidence to measure.
+        :param result_binding: Governed response-character limit.
 
-        Raises:
-            ValueError: If the encoded evidence exceeds the configured limit.
+        :raises ValueError: If the encoded evidence exceeds the configured limit.
         """
         if len(encoded_result) > result_binding.maximum_response_characters:
             raise CapabilityEvidenceLimitExceededError(

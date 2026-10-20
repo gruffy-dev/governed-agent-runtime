@@ -48,13 +48,13 @@ class SessionTargetResolver(BaseModel):
         """
         eligible_targets = self._eligible_targets(allowed_verticals)
         current_target = self._current_target(context)
-        normalized_name = (
+        normalised_name = (
             target_name.strip().casefold()
             if isinstance(target_name, str) and target_name.strip()
             else None
         )
 
-        if normalized_name is None:
+        if normalised_name is None:
             if current_target is None or current_target not in eligible_targets:
                 return TargetResolutionResult(status='required')
             return TargetResolutionResult(
@@ -65,9 +65,9 @@ class SessionTargetResolver(BaseModel):
         matches = tuple(
             target
             for target in eligible_targets
-            if normalized_name == target.id.casefold()
-            or normalized_name == target.display_name.casefold()
-            or normalized_name in {
+            if normalised_name == target.id.casefold()
+            or normalised_name == target.display_name.casefold()
+            or normalised_name in {
                 alias.casefold() for alias in target.aliases
             }
         )
@@ -140,7 +140,7 @@ class SessionTargetResolver(BaseModel):
         """
         if not allowed_verticals:
             return self.targets
-        normalized_verticals = {
+        normalised_verticals = {
             vertical.strip().casefold()
             for vertical in allowed_verticals
             if vertical.strip()
@@ -148,7 +148,7 @@ class SessionTargetResolver(BaseModel):
         return tuple(
             target
             for target in self.targets
-            if target.vertical.casefold() in normalized_verticals
+            if target.vertical.casefold() in normalised_verticals
         )
 
     def _candidate(

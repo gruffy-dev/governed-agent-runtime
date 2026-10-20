@@ -44,7 +44,7 @@ class TestPilotAuthenticationApi(unittest.TestCase):
             'valid-browser-token'
         )
 
-    def test_invalid_token_returns_generic_unauthorized_response(self) -> None:
+    def test_invalid_token_returns_generic_unauthorised_response(self) -> None:
         application = FastAPI()
         AuthenticationFailureHandler().register(application)
         authenticator = Mock()

@@ -99,12 +99,12 @@ class SessionSkillProfileResolver(BaseModel):
         Raises:
             ValueError: If the supplied session identifier is empty.
         """
-        normalized_session_id = session_id.strip()
-        if not normalized_session_id:
+        normalised_session_id = session_id.strip()
+        if not normalised_session_id:
             raise ValueError('session_id must not be empty.')
 
         profile_id = self.configuration.session_profile_assignments.get(
-            normalized_session_id,
+            normalised_session_id,
             self.configuration.default_profile_id,
         )
         return SessionSkillProfile(

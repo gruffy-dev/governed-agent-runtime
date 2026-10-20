@@ -45,15 +45,14 @@ class MosaicAgentCallbacks(BaseModel):
         self,
         callback_context: Context,
     ) -> None:
-        """Delegate completion handling to goal orchestration.
+        """
+        Delegate completion handling to goal orchestration.
 
-        Args:
-            callback_context: ADA callback context for the ending invocation.
+        :param callback_context: ADA callback context for the ending invocation.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If another invocation replaced
-                the active invocation before completion.
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If another invocation replaced
+            the active invocation before completion.
         """
         self.orchestration_controller.after_agent_callback(callback_context)
 
@@ -111,20 +110,18 @@ class MosaicAgentCallbacks(BaseModel):
         callback_context: Context,
         llm_response: LlmResponse,
     ) -> LlmResponse | None:
-        """Replace a premature final response with a continuation tool call.
+        """
+        Replace a premature final response with a continuation tool call.
 
-        Args:
-            callback_context: ADA context for the current model invocation.
-            llm_response: Model response before it is emitted as an event.
+        :param callback_context: ADA context for the current model invocation.
+        :param llm_response: Model response before it is emitted as an event.
 
-        Returns:
-            A synthetic continuation call while required capabilities remain,
+        :return: A synthetic continuation call while required capabilities remain,
             otherwise ``None`` to preserve normal ADK processing.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the invocation is stale.
-            pydantic.ValidationError: If ADK rejects the replacement response.
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If the invocation is stale.
+        :raises pydantic.ValidationError: If ADK rejects the replacement response.
         """
         if (
             llm_response.error_code
@@ -169,19 +166,17 @@ class MosaicAgentCallbacks(BaseModel):
         args: dict[str, Any],
         tool_context: Context,
     ) -> dict[str, object] | None:
-        """Delegate pre-execution tool enforcement to goal orchestration.
+        """
+        Delegate pre-execution tool enforcement to goal orchestration.
 
-        Args:
-            tool: ADA tool about to be invoked.
-            args: Model-supplied tool arguments.
-            tool_context: ADA context for the current tool invocation.
+        :param tool: ADA tool about to be invoked.
+        :param args: Model-supplied tool arguments.
+        :param tool_context: ADA context for the current tool invocation.
 
-        Returns:
-            A short-circuit result when blocked, otherwise ``None``.
+        :return: A short-circuit result when blocked, otherwise ``None``.
 
-        Raises:
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the invocation is stale.
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If the invocation is stale.
         """
         return self.orchestration_controller.before_tool_callback(
             tool,
@@ -196,18 +191,17 @@ class MosaicAgentCallbacks(BaseModel):
         tool_context: Context,
         tool_response: dict[str, Any],
     ) -> None:
-        """Delegate completed tool transitions to goal orchestration.
+        """
+        Delegate completed tool transitions to goal orchestration.
 
-        Args:
-            tool: ADA tool that completed.
-            args: Semantic arguments supplied to the tool.
-            tool_context: ADA context for the current tool invocation.
-            tool_response: Serialized result returned by the tool.
+        :param tool: ADA tool that completed.
+        :param args: Semantic arguments supplied to the tool.
+        :param tool_context: ADA context for the current tool invocation.
+        :param tool_response: Serialised result returned by the tool.
 
-        Raises:
-            ValueError: If a clarification transition is invalid.
-            RuntimeError: If orchestration state was not initialized.
-            ConcurrentSessionInvocationError: If the invocation is stale.
+        :raises ValueError: If a clarification transition is invalid.
+        :raises RuntimeError: If orchestration state was not initialised.
+        :raises ConcurrentSessionInvocationError: If the invocation is stale.
         """
         self.orchestration_controller.after_tool_callback(
             tool,

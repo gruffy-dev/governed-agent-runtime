@@ -112,7 +112,7 @@ class OrchestrationTransitionController(BaseModel):
         :return: Missing capability names in their declared order. An empty tuple
             is returned while awaiting explicit user clarification.
 
-        :raises RuntimeError: If orchestration state was not initialized.
+        :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If another invocation owns the
             active goal.
         """
@@ -137,7 +137,7 @@ class OrchestrationTransitionController(BaseModel):
 
         :return: A new mapping of required capability names to limiting outcomes.
 
-        :raises RuntimeError: If orchestration state was not initialized.
+        :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If another invocation owns the
             active goal.
         """
@@ -179,7 +179,7 @@ class OrchestrationTransitionController(BaseModel):
 
         :return: ``True`` until authorised metadata has been discovered once.
 
-        :raises RuntimeError: If orchestration state was not initialized.
+        :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If another invocation owns the
             active goal.
         """
@@ -203,7 +203,7 @@ class OrchestrationTransitionController(BaseModel):
         :return: A short-circuit result when the tool call is blocked, otherwise
             ``None`` so ADA executes the tool normally.
 
-        :raises RuntimeError: If orchestration state was not initialized.
+        :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If the tool does not belong to
             the active invocation.
         """
@@ -244,7 +244,7 @@ class OrchestrationTransitionController(BaseModel):
             return {
                 'status': 'skill_selection_already_completed',
                 'message': (
-                    'Capability discovery has already finalized skill '
+                    'Capability discovery has already finalised skill '
                     'selection for this goal.'
                 ),
             }
@@ -290,15 +290,15 @@ class OrchestrationTransitionController(BaseModel):
                     ),
                 }
             capability_name = args.get('capability_name')
-            normalized_name = (
+            normalised_name = (
                 capability_name.strip().lower()
                 if isinstance(capability_name, str)
                 else ''
             )
-            if normalized_name not in current.candidate_capability_names:
+            if normalised_name not in current.candidate_capability_names:
                 return {
                     'status': 'capability_not_authorized_for_goal',
-                    'capability_name': normalized_name or '<invalid>',
+                    'capability_name': normalised_name or '<invalid>',
                 }
 
         if tool_name == 'execute_capability' and current.phase == 'planning':
@@ -322,7 +322,7 @@ class OrchestrationTransitionController(BaseModel):
         :param tool: ADA tool that completed.
         :param args: Semantic arguments supplied to the tool.
         :param tool_context: ADA context for the current tool invocation.
-        :param tool_response: Serialized result returned by the tool.
+        :param tool_response: Serialised result returned by the tool.
 
         :raises ValueError: If a clarification tool call has no valid question.
         :raises RuntimeError: If state is absent or a capability transition
@@ -366,7 +366,7 @@ class OrchestrationTransitionController(BaseModel):
                 return
             if current.skill_batch_attempted:
                 return
-            requested_names = self._normalized_names(args.get('skill_names'))
+            requested_names = self._normalised_names(args.get('skill_names'))
             status = tool_response.get('status')
             loaded_names = (
                 self._loaded_names(tool_response)
@@ -551,7 +551,7 @@ class OrchestrationTransitionController(BaseModel):
             and args.get('capability_name') in current.candidate_capability_names
             and tool_response.get('target_id') == current.target_id
         ):
-            names = self._normalized_names(
+            names = self._normalised_names(
                 tool_response.get('missing_semantic_argument_names')
             )
             if names:
@@ -569,7 +569,7 @@ class OrchestrationTransitionController(BaseModel):
 
         :param context: ADA callback or tool context containing session state.
 
-        :return: Validated state, or ``None`` when a goal has not been initialized.
+        :return: Validated state, or ``None`` when a goal has not been initialised.
 
         :raises pydantic.ValidationError: If persisted state is malformed.
         """
@@ -583,18 +583,18 @@ class OrchestrationTransitionController(BaseModel):
         context: CallbackContextProtocol,
     ) -> OrchestrationState:
         """
-        Return initialized orchestration state.
+        Return initialised orchestration state.
 
         :param context: ADA callback or tool context containing session state.
 
-        :return: Validated initialized orchestration state.
+        :return: Validated initialised orchestration state.
 
-        :raises RuntimeError: If no orchestration state has been initialized.
+        :raises RuntimeError: If no orchestration state has been initialised.
         :raises pydantic.ValidationError: If persisted state is malformed.
         """
         state = self._read_state(context)
         if state is None:
-            raise RuntimeError('MOSAIC orchestration state is not initialized.')
+            raise RuntimeError('MOSAIC orchestration state is not initialised.')
         return state
 
     def _require_active_state(
@@ -608,7 +608,7 @@ class OrchestrationTransitionController(BaseModel):
 
         :return: Validated state owned by the current invocation.
 
-        :raises RuntimeError: If no orchestration state has been initialized.
+        :raises RuntimeError: If no orchestration state has been initialised.
         :raises ConcurrentSessionInvocationError: If another invocation owns the
             active goal.
         """
@@ -637,13 +637,13 @@ class OrchestrationTransitionController(BaseModel):
         )
         context.state[self.state_key] = validated_state.model_dump(mode='json')
 
-    def _normalized_names(self, value: object) -> tuple[str, ...]:
+    def _normalised_names(self, value: object) -> tuple[str, ...]:
         """
-        Normalize a JSON skill-name list while preserving order.
+        Normalise a JSON skill-name list while preserving order.
 
         :param value: Untrusted tool argument expected to contain skill names.
 
-        :return: Unique normalized names, or an empty tuple for a non-list value.
+        :return: Unique normalised names, or an empty tuple for a non-list value.
         """
         if not isinstance(value, list):
             return ()
@@ -662,7 +662,7 @@ class OrchestrationTransitionController(BaseModel):
         """
         Extract approved skill names from a loader response.
 
-        :param tool_response: Serialized response returned by ``load_skills``.
+        :param tool_response: Serialised response returned by ``load_skills``.
 
         :return: Skill names present in valid loaded-skill entries.
         """
@@ -687,10 +687,10 @@ class OrchestrationTransitionController(BaseModel):
         """
         Extract one capability declaration from loaded skills.
 
-        :param tool_response: Serialized response returned by ``load_skills``.
+        :param tool_response: Serialised response returned by ``load_skills``.
         :param field_name: Required or optional capability declaration to read.
 
-        :return: Unique normalized capability names in declaration order.
+        :return: Unique normalised capability names in declaration order.
         """
         loaded_skills = tool_response.get('loaded_skills')
         if not isinstance(loaded_skills, list):
@@ -717,9 +717,9 @@ class OrchestrationTransitionController(BaseModel):
         """
         Extract authorised semantic names from discovery metadata.
 
-        :param tool_response: Serialized capability-discovery response.
+        :param tool_response: Serialised capability-discovery response.
 
-        :return: Unique normalized candidate names in response order.
+        :return: Unique normalised candidate names in response order.
         """
         capabilities = tool_response.get('capabilities')
         if not isinstance(capabilities, list):
@@ -749,7 +749,7 @@ class OrchestrationTransitionController(BaseModel):
 
         :param args: Semantic arguments supplied to ``execute_capability``.
         :param tool_context: ADA context receiving the state transition.
-        :param tool_response: Serialized capability execution result.
+        :param tool_response: Serialised capability execution result.
         :param current: Validated orchestration state before the transition.
 
         :raises RuntimeError: If the result target differs from the goal target.
@@ -776,16 +776,16 @@ class OrchestrationTransitionController(BaseModel):
                 'Capability result target does not match the active goal.'
             )
 
-        normalized_name = capability_name.strip().lower()
+        normalised_name = capability_name.strip().lower()
         if (
-            normalized_name not in current.required_capability_names
-            or normalized_name not in current.candidate_capability_names
+            normalised_name not in current.required_capability_names
+            or normalised_name not in current.candidate_capability_names
         ):
             return
 
         required_capability_outcome_records = {
             **current.required_capability_outcome_records,
-            normalized_name: (current.goal_id, status),
+            normalised_name: (current.goal_id, status),
         }
         self._write_state(
             tool_context,

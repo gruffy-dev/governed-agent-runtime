@@ -62,16 +62,16 @@ class PilotAuthenticationMiddleware:
 
         :param scope: ASGI request scope containing headers and cookies.
 
-        :return: Immutable trusted context, or ``None`` when unauthorized.
+        :return: Immutable trusted context, or ``None`` when unauthorised.
         """
-        authorization_values = Headers(scope=scope).getlist(
+        authorisation_values = Headers(scope=scope).getlist(
             'authorization'
         )
         cookie_token = HTTPConnection(scope).cookies.get(self._cookie_name)
-        if authorization_values and cookie_token is not None:
+        if authorisation_values and cookie_token is not None:
             return None
-        if authorization_values:
-            plaintext_token = self._parse_bearer(authorization_values)
+        if authorisation_values:
+            plaintext_token = self._parse_bearer(authorisation_values)
         else:
             plaintext_token = cookie_token
         if (
@@ -85,18 +85,18 @@ class PilotAuthenticationMiddleware:
 
     @staticmethod
     def _parse_bearer(
-        authorization_values: list[str],
+        authorisation_values: list[str],
     ) -> str | None:
         """
         Parse exactly one strict Authorization bearer value.
 
-        :param authorization_values: Authorization header values from ASGI.
+        :param authorisation_values: Authorization header values from ASGI.
 
         :return: Opaque bearer token, or ``None`` when malformed.
         """
-        if len(authorization_values) != 1:
+        if len(authorisation_values) != 1:
             return None
-        scheme, separator, plaintext_token = authorization_values[0].partition(
+        scheme, separator, plaintext_token = authorisation_values[0].partition(
             ' '
         )
         if separator != ' ' or scheme.casefold() != 'bearer':
@@ -132,9 +132,9 @@ class PilotAuthenticationMiddleware:
         send: Send,
     ) -> None:
         """
-        Log and return the same correlated unauthorized HTTP failure.
+        Log and return the same correlated unauthorised HTTP failure.
 
-        :param scope: Unauthorized HTTP or WebSocket connection scope.
+        :param scope: Unauthorised HTTP or WebSocket connection scope.
         :param receive: ASGI inbound-message receiver.
         :param send: ASGI outbound-message sender.
         """
