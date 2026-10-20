@@ -38,9 +38,29 @@ class TestGitSkillCatalogueConfiguration(unittest.TestCase):
             configuration.repository_cache_path,
             Path('/tmp/mosaic-test/skills.git'),
         )
-        self.assertEqual(configuration.synchronization_timeout_seconds, 30)
+        self.assertEqual(configuration.synchronisation_timeout_seconds, 30)
+        self.assertEqual(
+            configuration.model_dump()['synchronisation_timeout_seconds'], 30
+        )
         self.assertNotIn('access_token', configuration.model_dump())
         self.assertNotIn('secret-token', repr(configuration))
+
+    def test_british_timeout_field_accepts_explicit_configuration(self) -> None:
+        configuration = GitSkillCatalogueConfiguration(
+            repository_url='https://example.test/skills.git',
+            access_token='synthetic-token',
+            synchronisation_timeout_seconds=17,
+        )
+        self.assertEqual(configuration.synchronisation_timeout_seconds, 17)
+
+    def test_timeout_limits_are_enforced(self) -> None:
+        for timeout in (0, -1, 301):
+            with self.subTest(timeout=timeout), self.assertRaises(ValidationError):
+                GitSkillCatalogueConfiguration(
+                    repository_url='https://example.test/skills.git',
+                    access_token='synthetic-token',
+                    synchronisation_timeout_seconds=timeout,
+                )
 
     def test_embedded_repository_credentials_are_rejected(self) -> None:
         """Repository URLs cannot carry credentials that may reach logs."""

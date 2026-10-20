@@ -54,6 +54,32 @@ class TestGitSkillCatalogueProvider(unittest.TestCase):
 
             self.assertEqual(snapshot.skills[0].name, 'investigate-platform')
 
+    def test_british_timeout_field_configures_initial_and_cached_transport(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            repository_path = self._create_repository(temporary_root)
+            cache_path = temporary_root / 'cache.git'
+            provider = GitSkillCatalogueProvider(
+                configuration=GitSkillCatalogueConfiguration(
+                    repository_url=str(repository_path),
+                    revision='main',
+                    repository_cache_path=cache_path,
+                    access_token='synthetic-token',
+                    synchronisation_timeout_seconds=17,
+                ),
+                package_parser=SkillPackageParser(),
+            )
+            self.assertEqual(
+                provider._build_transport_configuration().get((b'http',), b'timeout'),
+                b'17.0',
+            )
+            provider.synchronise()
+            with Repo(cache_path) as repository:
+                self.assertEqual(
+                    repository.get_config().get((b'http',), b'timeout'),
+                    b'17.0',
+                )
+
     def test_bearer_token_is_not_persisted_in_repository_cache(self) -> None:
         """The bare Git cache must not retain its Bearer credential."""
         with TemporaryDirectory() as temporary_directory:

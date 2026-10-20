@@ -61,7 +61,7 @@ class GitSkillCatalogueConfiguration(BaseModel):
         repr=False,
         exclude=True,
     )
-    synchronization_timeout_seconds: float = Field(
+    synchronisation_timeout_seconds: float = Field(
         default_factory=lambda: os.getenv(
             'MOSAIC_SKILLS_SYNCHRONIZATION_TIMEOUT_SECONDS',
             '60',

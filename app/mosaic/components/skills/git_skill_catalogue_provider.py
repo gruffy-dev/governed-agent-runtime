@@ -538,7 +538,7 @@ class GitSkillCatalogueProvider:
             (b'http',),
             b'timeout',
             str(
-                self._configuration.synchronization_timeout_seconds
+                self._configuration.synchronisation_timeout_seconds
             ).encode('ascii'),
         )
         configuration.set(
@@ -567,7 +567,7 @@ class GitSkillCatalogueProvider:
             (b'http',),
             b'timeout',
             str(
-                self._configuration.synchronization_timeout_seconds
+                self._configuration.synchronisation_timeout_seconds
             ).encode('ascii'),
         )
         configuration.write_to_path()
