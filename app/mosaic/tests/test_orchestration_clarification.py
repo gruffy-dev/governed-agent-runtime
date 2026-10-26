@@ -13,6 +13,7 @@ from mosaic.models.skills.session_skill_profile_configuration import SessionSkil
 from mosaic.models.skills.skill import Skill
 from mosaic.models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 from mosaic.tests.fake_llm_response import FakeLlmResponse
+from mosaic.tests.fake_llm_request import FakeLlmRequest
 
 
 class TestOrchestrationClarification(unittest.TestCase):
@@ -198,8 +199,8 @@ class TestOrchestrationClarification(unittest.TestCase):
                 parts=[SimpleNamespace(text='Everything is healthy.', function_call=None)]
             )
         )
-        replacement = self.callbacks.after_model_callback(self.context, response)
-        self.assertEqual(replacement.get_function_calls()[0].name, 'continue_goal_execution')
+        with self.assertRaisesRegex(RuntimeError, 'required goal tools'):
+            self.callbacks.after_model_callback(self.context, response)
 
     def test_invalid_arguments_are_not_automatically_treated_as_missing(self) -> None:
         self._discover()
@@ -214,6 +215,145 @@ class TestOrchestrationClarification(unittest.TestCase):
         )
         self.assertIsNone(self.controller.pending_clarification_question(self.context))
         self.assertEqual(self._state().required_capability_outcomes, {})
+
+    def test_model_tool_selection_progresses_and_resets_for_final_response(self) -> None:
+        request = FakeLlmRequest()
+        with FakeLlmRequest.google_types():
+            self.assertIsNone(self.callbacks.before_model_callback(self.context, request))
+            configuration = request.config.tool_config.function_calling_config
+            self.assertEqual(configuration.mode, 'ANY')
+            self.assertEqual(
+                configuration.allowed_function_names,
+                ['discover_capabilities', 'request_goal_clarification'],
+            )
+            self._discover()
+            self.callbacks.before_model_callback(self.context, request)
+            configuration = request.config.tool_config.function_calling_config
+            self.assertEqual(configuration.mode, 'ANY')
+            self.assertEqual(
+                configuration.allowed_function_names,
+                ['execute_capability', 'request_goal_clarification'],
+            )
+            self._tool(
+                'execute_capability',
+                {'capability_name': 'mq.qmgr.status.read'},
+                {'status': 'success', 'target_id': 'messaging/example'},
+            )
+            self.callbacks.before_model_callback(self.context, request)
+            configuration = request.config.tool_config.function_calling_config
+            self.assertEqual(configuration.mode, 'AUTO')
+            self.assertIsNone(configuration.allowed_function_names)
+
+    def test_terminal_discovery_limitation_allows_an_honest_final_response(self) -> None:
+        self._tool(
+            'discover_capabilities',
+            {},
+            {'status': 'required_capabilities_unavailable'},
+        )
+        request = FakeLlmRequest()
+        with FakeLlmRequest.google_types():
+            self.callbacks.before_model_callback(self.context, request)
+        self.assertEqual(request.config.tool_config.function_calling_config.mode, 'AUTO')
+        response = FakeLlmResponse(
+            content=SimpleNamespace(parts=[SimpleNamespace(text='Required evidence is unavailable.')])
+        )
+        self.assertIsNone(self.callbacks.after_model_callback(self.context, response))
+
+    def test_model_function_call_parts_and_signatures_are_not_rewritten(self) -> None:
+        self._discover()
+        parts = [
+            SimpleNamespace(
+                function_call=SimpleNamespace(name='execute_capability', args={}),
+                thought_signature=b'synthetic-test-signature',
+            ),
+            SimpleNamespace(
+                function_call=SimpleNamespace(name='request_goal_clarification', args={}),
+                thought_signature=None,
+            ),
+        ]
+        response = FakeLlmResponse(content=SimpleNamespace(parts=parts))
+        self.assertIsNone(self.callbacks.after_model_callback(self.context, response))
+        self.assertIs(response.content.parts, parts)
+        self.assertEqual(parts[0].thought_signature, b'synthetic-test-signature')
+        self.assertIsNone(parts[1].thought_signature)
+
+    def test_other_tool_configuration_is_preserved(self) -> None:
+        request = FakeLlmRequest()
+        with FakeLlmRequest.google_types():
+            from google.genai.types import ToolConfig
+
+            existing = ToolConfig(retrieval_config={'lat_lng': {'latitude': 1, 'longitude': 2}})
+            request.config.tool_config = existing
+            self.callbacks.before_model_callback(self.context, request)
+        self.assertEqual(request.config.tool_config.retrieval_config, existing.retrieval_config)
+        self.assertIsNone(existing.function_calling_config)
+
+    def test_model_error_and_partial_text_do_not_generate_replacement_calls(self) -> None:
+        for response in (
+            FakeLlmResponse(content=None, error_code='synthetic-provider-error'),
+            FakeLlmResponse(
+                content=SimpleNamespace(parts=[SimpleNamespace(text='Partial text')]),
+                partial=True,
+            ),
+        ):
+            with self.subTest(response=response):
+                self.assertIsNone(self.callbacks.after_model_callback(self.context, response))
+
+    def test_installed_google_types_accept_forced_and_final_tool_configuration(self) -> None:
+        try:
+            from google.genai.types import GenerateContentConfig
+        except ImportError:
+            self.skipTest('Google GenAI SDK is required for real-type validation.')
+        request = SimpleNamespace(config=GenerateContentConfig())
+        self.callbacks.before_model_callback(self.context, request)
+        restored = GenerateContentConfig.model_validate(request.config.model_dump(mode='python'))
+        self.assertEqual(restored.tool_config.function_calling_config.mode.value, 'ANY')
+        self.assertEqual(
+            restored.tool_config.function_calling_config.allowed_function_names,
+            ['discover_capabilities', 'request_goal_clarification'],
+        )
+        self._discover()
+        self._tool(
+            'execute_capability',
+            {'capability_name': 'mq.qmgr.status.read'},
+            {'status': 'success', 'target_id': 'messaging/example'},
+        )
+        self.callbacks.before_model_callback(self.context, request)
+        self.assertEqual(request.config.tool_config.function_calling_config.mode.value, 'AUTO')
+
+    def test_installed_adk_preserves_signed_function_calls_through_callbacks(self) -> None:
+        try:
+            from google.adk.models import LlmResponse
+        except ImportError:
+            self.skipTest('Google ADK is required for real-response validation.')
+        self._discover()
+        response = LlmResponse.model_validate(
+            {
+                'content': {
+                    'role': 'model',
+                    'parts': [
+                        {
+                            'function_call': {
+                                'name': 'execute_capability',
+                                'args': {
+                                    'capability_name': 'mq.qmgr.status.read',
+                                    'semantic_arguments': {},
+                                },
+                            },
+                            'thought_signature': b'synthetic-test-signature',
+                        }
+                    ],
+                }
+            }
+        )
+        before = response.model_dump(mode='json')
+        self.assertIsNone(self.callbacks.after_model_callback(self.context, response))
+        self.assertEqual(response.model_dump(mode='json'), before)
+        restored = LlmResponse.model_validate_json(response.model_dump_json())
+        self.assertEqual(
+            restored.content.parts[0].thought_signature,
+            response.content.parts[0].thought_signature,
+        )
 
     def test_unbound_execution_cannot_create_a_clarification_pause(self) -> None:
         self._discover()
@@ -266,8 +406,11 @@ class TestOrchestrationClarification(unittest.TestCase):
     def _question_response(self) -> FakeLlmResponse | None:
         models = ModuleType('google.adk.models')
         models.LlmResponse = FakeLlmResponse
-        with patch.dict(sys.modules, {'google.adk.models': models}):
-            return self.callbacks.before_model_callback(self.context, SimpleNamespace())
+        with (
+            FakeLlmRequest.google_types(),
+            patch.dict(sys.modules, {'google.adk.models': models}),
+        ):
+            return self.callbacks.before_model_callback(self.context, FakeLlmRequest())
 
     def _resume(self) -> None:
         self.context = SimpleNamespace(

@@ -168,24 +168,32 @@ class OrchestrationTransitionController(BaseModel):
             return None
         return current.clarification_question or 'What information should I use?'
 
-    def skill_discovery_required(
+    def required_model_tool_names(
         self,
         callback_context: CallbackContextProtocol,
-    ) -> bool:
+    ) -> tuple[str, ...]:
         """
-        Return whether the active goal still requires skill discovery.
+        Select model-generated tools required before a final response is allowed.
 
         :param callback_context: ADA callback context for the current invocation.
 
-        :return: ``True`` until authorised metadata has been discovered once.
+        :return: Allowed tool names for forced function calling, or an empty
+            tuple when a final response is permitted.
 
         :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If another invocation owns the
             active goal.
         """
-        return not self._require_active_state(
-            callback_context
-        ).skill_discovery_completed
+        current = self._require_active_state(callback_context)
+        if current.phase in {'awaiting_clarification', 'completed'}:
+            return ()
+        if not current.skill_discovery_completed:
+            return ('discover_skills',)
+        if not self.incomplete_required_capability_names(callback_context):
+            return ()
+        if not current.capability_discovery_completed:
+            return ('discover_capabilities', 'request_goal_clarification')
+        return ('execute_capability', 'request_goal_clarification')
 
     def before_tool_callback(
         self,

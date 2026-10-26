@@ -127,9 +127,9 @@ Skill usage:
 - Before the first tool call, decompose the entire directive into all of its
   domain, procedural, and output requirements. Do not begin the first subtask
   while skill discovery for a later subtask remains outstanding.
-- The runtime calls discover_skills automatically before the first model
-  inference for every new goal. Treat its result as the complete bounded skill
-  catalogue authorised for this session. Do not call discover_skills again.
+- The runtime constrains the first model step of every new goal to call
+  discover_skills. Treat its result as the complete bounded skill catalogue
+  authorised for this session. Do not call discover_skills again.
 - Skill discovery is required before any capability execution, even when no
   discovered skill is ultimately relevant to the goal.
 - Review every returned skill against each distinct requirement. Never infer,
@@ -149,9 +149,9 @@ Skill usage:
   automatically to the final model request. Return only the resulting
   structured value without Markdown or additional prose.
 - The only callable tools are the tools explicitly supplied to this agent:
-  load_skills, discover_capabilities, execute_capability, and
-  request_goal_clarification. discover_skills and continue_goal_execution are
-  reserved for runtime orchestration; never select them yourself.
+  discover_skills, load_skills, discover_capabilities, execute_capability, and
+  request_goal_clarification. Follow the runtime's tool-selection constraints;
+  do not repeat completed discovery or invent additional tools.
 - Call load_skills no more than once while completing the same goal. Do not
   defer a skill until a later stage, reload a skill after provider results, or
   load skills separately for sequential subtasks.
@@ -260,7 +260,6 @@ Follow these operating rules:
         capability_discovery_service.discover_capabilities,
         mcp_execution_gateway.execute_capability,
         goal_orchestration_tools.request_goal_clarification,
-        goal_orchestration_tools.continue_goal_execution,
     ],
     before_model_callback=[
         mosaic_agent_callbacks.before_model_callback,

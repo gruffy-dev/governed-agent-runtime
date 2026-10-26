@@ -62,17 +62,18 @@ class MosaicAgentCallbacks(BaseModel):
         llm_request: LlmRequest,
     ) -> LlmResponse | None:
         """
-        End clarification turns or force discovery before model inference.
+        End clarification turns or constrain the model's next genuine tool call.
 
         :param callback_context: ADA context for the current model invocation.
-        :param llm_request: Prepared request skipped for clarification or discovery.
+        :param llm_request: Prepared request receiving goal-scoped tool selection.
 
-        :return: A final clarification question, an initial discovery call, or
-            ``None`` to allow normal model inference.
+        :return: A final clarification question, or ``None`` to allow model
+            inference with the required function-calling configuration.
 
         :raises RuntimeError: If orchestration state was not initialised.
         :raises ConcurrentSessionInvocationError: If the invocation is stale.
-        :raises pydantic.ValidationError: If ADK rejects the synthetic response.
+        :raises pydantic.ValidationError: If the SDK rejects the tool configuration
+            or clarification response.
         """
         question = self.orchestration_controller.pending_clarification_question(
             callback_context
@@ -84,26 +85,24 @@ class MosaicAgentCallbacks(BaseModel):
                 {'content': {'role': 'model', 'parts': [{'text': question}]}}
             )
 
-        if not self.orchestration_controller.skill_discovery_required(callback_context):
-            return None
+        from google.genai.types import FunctionCallingConfig
+        from google.genai.types import ToolConfig
 
-        from google.adk.models import LlmResponse as AdkLlmResponse
-
-        return AdkLlmResponse.model_validate(
-            {
-                'content': {
-                    'role': 'model',
-                    'parts': [
-                        {
-                            'function_call': {
-                                'name': 'discover_skills',
-                                'args': {},
-                            }
-                        }
-                    ],
-                }
+        required_names = self.orchestration_controller.required_model_tool_names(
+            callback_context
+        )
+        tool_config = llm_request.config.tool_config
+        if tool_config is None:
+            tool_config = ToolConfig()
+        llm_request.config.tool_config = tool_config.model_copy(
+            update={
+                'function_calling_config': FunctionCallingConfig(
+                    mode='ANY' if required_names else 'AUTO',
+                    allowed_function_names=list(required_names) if required_names else None,
+                )
             }
         )
+        return None
 
     def after_model_callback(
         self,
@@ -111,17 +110,16 @@ class MosaicAgentCallbacks(BaseModel):
         llm_response: LlmResponse,
     ) -> LlmResponse | None:
         """
-        Replace a premature final response with a continuation tool call.
+        Preserve genuine model parts and reject premature final responses.
 
         :param callback_context: ADA context for the current model invocation.
         :param llm_response: Model response before it is emitted as an event.
 
-        :return: A synthetic continuation call while required capabilities remain,
-            otherwise ``None`` to preserve normal ADK processing.
+        :return: ``None`` to preserve the model response and its thought signatures.
 
-        :raises RuntimeError: If orchestration state was not initialised.
+        :raises RuntimeError: If orchestration state was not initialised, or the
+            model ends despite a required tool-selection constraint.
         :raises ConcurrentSessionInvocationError: If the invocation is stale.
-        :raises pydantic.ValidationError: If ADK rejects the replacement response.
         """
         if (
             llm_response.error_code
@@ -132,33 +130,11 @@ class MosaicAgentCallbacks(BaseModel):
         ):
             return None
 
-        missing_names = (
-            self.orchestration_controller.incomplete_required_capability_names(
-                callback_context
+        if self.orchestration_controller.required_model_tool_names(callback_context):
+            raise RuntimeError(
+                'The model ended before required goal tools completed.'
             )
-        )
-        if not missing_names:
-            return None
-
-        return type(llm_response).model_validate(
-            {
-                'content': {
-                    'role': 'model',
-                    'parts': [
-                        {
-                            'function_call': {
-                                'name': 'continue_goal_execution',
-                                'args': {
-                                    'missing_required_capability_names': list(
-                                        missing_names
-                                    )
-                                },
-                            }
-                        }
-                    ],
-                }
-            }
-        )
+        return None
 
     def before_tool_callback(
         self,

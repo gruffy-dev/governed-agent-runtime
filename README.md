@@ -1325,3 +1325,10 @@ PYTHONPATH=app ./.venv/bin/python -m unittest discover -s app/mosaic/tests
 
 Live ADA and MCP verification is separate from the local deterministic test
 suite and requires the target deployment configuration and providers.
+
+MOSAIC uses model-generated function calls for Skill discovery and required
+Capability work. Goal-scoped `ANY` tool selection enforces discovery and
+execution order; `AUTO` is restored when a final answer is allowed. Callbacks
+do not fabricate function-call history or thought signatures. Genuine model
+parts remain unchanged for SDK history preservation. A gateway that ignores
+required tool selection fails closed rather than triggering a synthetic retry.

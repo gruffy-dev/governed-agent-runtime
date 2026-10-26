@@ -1,10 +1,8 @@
 """Tests for composed MOSAIC profile and orchestration callbacks."""
 
-import sys
 import unittest
 from datetime import datetime, timezone
-from types import ModuleType, SimpleNamespace
-from unittest.mock import patch
+from types import SimpleNamespace
 
 from mosaic.components.orchestration.mosaic_agent_callbacks import (
     MosaicAgentCallbacks,
@@ -24,6 +22,7 @@ from mosaic.models.skills.session_skill_profile_configuration import (
 from mosaic.models.skills.skill import Skill
 from mosaic.models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 from mosaic.tests.fake_llm_response import FakeLlmResponse
+from mosaic.tests.fake_llm_request import FakeLlmRequest
 
 
 class TestMosaicAgentCallbacks(unittest.TestCase):
@@ -73,8 +72,7 @@ class TestMosaicAgentCallbacks(unittest.TestCase):
             'invocation-1',
         )
 
-    def test_after_model_forces_incomplete_capability_execution(self) -> None:
-        """Premature user output becomes an internal continuation call."""
+    def test_after_model_rejects_incomplete_capability_execution(self) -> None:
         snapshot = SkillCatalogueSnapshot(
             commit_sha='a' * 40,
             loaded_at=datetime.now(timezone.utc),
@@ -163,21 +161,17 @@ class TestMosaicAgentCallbacks(unittest.TestCase):
             )
         )
 
-        replacement = callbacks.after_model_callback(
-            context,
-            premature_response,
-        )
-
-        self.assertIsNotNone(replacement)
-        function_call = replacement.get_function_calls()[0]
-        self.assertEqual(function_call.name, 'continue_goal_execution')
+        request = FakeLlmRequest()
+        with FakeLlmRequest.google_types():
+            self.assertIsNone(callbacks.before_model_callback(context, request))
         self.assertEqual(
-            function_call.args['missing_required_capability_names'],
-            ['cluster.logs.read'],
+            request.config.tool_config.function_calling_config.allowed_function_names,
+            ['execute_capability', 'request_goal_clarification'],
         )
+        with self.assertRaisesRegex(RuntimeError, 'required goal tools'):
+            callbacks.after_model_callback(context, premature_response)
 
     def test_before_model_forces_skill_discovery_for_a_new_goal(self) -> None:
-        """The first inference is replaced with automatic skill discovery."""
         snapshot = SkillCatalogueSnapshot(
             commit_sha='a' * 40,
             loaded_at=datetime.now(timezone.utc),
@@ -209,20 +203,35 @@ class TestMosaicAgentCallbacks(unittest.TestCase):
             state={},
         )
         callbacks.before_agent_callback(context)
-        fake_models = ModuleType('google.adk.models')
-        fake_models.LlmResponse = FakeLlmResponse
-
-        with patch.dict(sys.modules, {'google.adk.models': fake_models}):
+        request = FakeLlmRequest()
+        with FakeLlmRequest.google_types():
             response = callbacks.before_model_callback(
                 context,
-                SimpleNamespace(),
+                request,
             )
 
-        self.assertIsNotNone(response)
+        self.assertIsNone(response)
         self.assertEqual(
-            response.get_function_calls()[0].name,
-            'discover_skills',
+            request.config.tool_config.function_calling_config.mode,
+            'ANY',
         )
+        self.assertEqual(
+            request.config.tool_config.function_calling_config.allowed_function_names,
+            ['discover_skills'],
+        )
+        callbacks.after_tool_callback(
+            SimpleNamespace(name='discover_skills'),
+            {},
+            context,
+            {'status': 'none_available'},
+        )
+        with FakeLlmRequest.google_types():
+            self.assertIsNone(callbacks.before_model_callback(context, request))
+        self.assertEqual(request.config.tool_config.function_calling_config.mode, 'AUTO')
+        final_response = FakeLlmResponse(
+            content=SimpleNamespace(parts=[SimpleNamespace(text='A general answer.')])
+        )
+        self.assertIsNone(callbacks.after_model_callback(context, final_response))
 
 
 if __name__ == '__main__':
