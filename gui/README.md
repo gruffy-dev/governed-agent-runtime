@@ -5,7 +5,7 @@ It uses Dash and Dash Bootstrap Components. It does not import the orchestrator,
 read its databases, proxy authentication, or call ADA directly. Browser requests
 go to the public MOSAIC backend using the backend's HttpOnly cookie.
 
-## Local installation (Python 3.12–3.14)
+## Local installation (Python 3.12–3.14, macOS or Linux)
 
 From this folder:
 
@@ -39,10 +39,99 @@ JavaScript tests, not installation or running the app.
 MOSAIC_GUI_BACKEND_URL                 Public API origin; default http://127.0.0.1:8000
 MOSAIC_GUI_HOST                        GUI bind address; default 127.0.0.1
 MOSAIC_GUI_PORT                        GUI bind port; default 8050
+MOSAIC_GUI_SCHEME                      http (default) or https; no automatic fallback
+MOSAIC_GUI_TLS_CERT_FILE               PEM server certificate followed by intermediates
+MOSAIC_GUI_TLS_KEY_FILE                Matching unencrypted PEM private key
 MOSAIC_GUI_ORGANISATION_LOGO_PATH       Optional private PNG path
 MOSAIC_GUI_ORGANISATION_LOGO_WIDTH      Maximum PNG width; default 88 pixels
 MOSAIC_GUI_ORGANISATION_LOGO_HEIGHT     Maximum PNG height; default 40 pixels
 ```
+
+## HTTPS listener
+
+The GUI uses Gunicorn with one supervised threaded worker and four request
+threads. It runs on macOS and Linux; native Windows execution is not supported.
+HTTP remains the default for local development and deployments with upstream
+TLS termination. To enable HTTPS directly on the GUI listener:
+
+```sh
+export MOSAIC_GUI_SCHEME=https
+export MOSAIC_GUI_TLS_CERT_FILE=/path/to/fullchain.pem
+export MOSAIC_GUI_TLS_KEY_FILE=/path/to/private.key
+export MOSAIC_GUI_BACKEND_URL=https://api.example.com
+mosaic-gui
+```
+
+Replace the example API origin with the configured Apigee HTTPS origin. The
+browser contacts that origin directly and validates its certificate using its
+normal trust settings. The GUI server does not call Apigee or disable certificate
+verification. No orchestrator code changes are needed.
+
+The certificate must cover the GUI hostname in its Subject Alternative Names.
+Supply the server certificate and intermediate chain in PEM format. Both TLS
+files are required in HTTPS mode. Missing, unreadable, malformed or mismatched
+files stop startup; there is no fallback to HTTP. Keys must be unencrypted to
+allow unattended startup, protected by filesystem permissions and readable only
+by the service account where practical. Gunicorn also loads the files when
+starting workers. Configuration validation does not check certificate expiry or
+browser trust; verify those with a trusted client.
+
+Keep all TLS material outside Git and images, and mount it read-only for
+deployment. The standalone GUI ignore rules also exclude common certificate and
+key extensions and private-tls/. Restart the GUI after replacing certificates.
+The existing MOSAIC_GUI_PORT selects the port for either protocol; HTTPS does not
+automatically select port 443. Only one protocol is served, with no HTTP redirect
+listener. HTTP mode rejects TLS file settings to catch accidental misconfiguration.
+
+### Local self-signed HTTPS test
+
+Generate test material outside the repository (requires OpenSSL with -addext):
+
+```sh
+mkdir -p "$HOME/.mosaic-gui-tls"
+chmod 700 "$HOME/.mosaic-gui-tls"
+openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
+  -keyout "$HOME/.mosaic-gui-tls/localhost.key" \
+  -out "$HOME/.mosaic-gui-tls/localhost.pem" \
+  -subj '/CN=localhost' \
+  -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1'
+chmod 600 "$HOME/.mosaic-gui-tls/localhost.key"
+export MOSAIC_GUI_SCHEME=https
+export MOSAIC_GUI_TLS_CERT_FILE="$HOME/.mosaic-gui-tls/localhost.pem"
+export MOSAIC_GUI_TLS_KEY_FILE="$HOME/.mosaic-gui-tls/localhost.key"
+mosaic-gui
+```
+
+In another terminal, verify the certificate and response without bypassing TLS:
+
+```sh
+curl --noproxy '*' --cacert "$HOME/.mosaic-gui-tls/localhost.pem" \
+  https://localhost:8050/
+```
+
+For browser testing, import only localhost.pem into your local certificate trust
+store and explicitly trust it for SSL (on macOS, use Keychain Access). Never
+import or share the private key. Browser trust settings vary; remove the test
+certificate when finished. Open https://localhost:8050 and check that the page
+and assets load without certificate warnings. This check does not need a backend.
+
+For login and chat tests, set MOSAIC_GUI_BACKEND_URL to an HTTPS Apigee endpoint or
+a local HTTPS reverse proxy in front of the existing HTTP backend. The browser
+must trust the API certificate too. Do not depend on browser-specific HTTP
+loopback exceptions: mixed-content, local-network and cookie restrictions can
+prevent an HTTPS GUI from using an HTTP API. The backend's allowed browser origin
+must match https://localhost:8050 exactly for this test, and its cookie settings
+must suit the public API origin.
+
+To restore the existing local HTTP listener:
+
+```sh
+export MOSAIC_GUI_SCHEME=http
+unset MOSAIC_GUI_TLS_CERT_FILE MOSAIC_GUI_TLS_KEY_FILE
+mosaic-gui
+```
+
+## Branding
 
 Keep the organisation PNG outside public assets, preferably in the ignored
 private-branding/ directory, or mount it separately in deployment. Its aspect
@@ -85,7 +174,7 @@ Sign-out clears the cookie through the backend and clears GUI user data. A
 different token loads a different workspace. Stale responses from an earlier
 sign-in cannot repopulate the UI. No token is placed in URLs, browser storage,
 Dash stores or server callbacks; token entry uses a transient native input.
-The GUI uses Waitress without debug/reloading. In local testing, browser cookies
+The GUI uses Gunicorn without debug/reloading. In local testing, browser cookies
 share a host across ports; in deployment the backend cookie remains host-only
 on its separate HTTPS hostname. Never log or commit cookie values.
 
@@ -95,10 +184,18 @@ Host the GUI separately from the backend. Configure their sibling HTTPS origins
 under the same parent domain, set the backend's exact GUI allowlist, and retain
 secure backend cookies. The GUI needs no extra reverse-proxy routing to ADA.
 The optional Dockerfile builds this folder only, listens on port 8050 and runs
-as a non-root user. Actual hosting, TLS, DNS and deployed browser checks remain
-operator responsibilities; no deployment is performed by this code tranche.
+as a non-root user. For direct TLS, provide the scheme and file-path environment
+variables and mount the certificate/key read-only with permissions allowing that
+user to read them. For hosting that terminates TLS upstream, leave the GUI's
+listener in HTTP mode and omit the TLS file settings. DNS, certificate issuance,
+renewal, hosting and deployed browser checks remain operator responsibilities.
 
 ## Tests
+
+The Python tests require OpenSSL at /usr/bin/openssl and permission to
+bind a loopback port. They generate disposable certificates in a temporary
+directory, verify real HTTP/HTTPS listeners and worker shutdown, and reject
+invalid TLS configuration. They do not install certificates into a trust store.
 
 ```sh
 PYTHONPATH=src .venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -q

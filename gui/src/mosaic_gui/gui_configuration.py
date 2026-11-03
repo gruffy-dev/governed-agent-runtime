@@ -1,6 +1,7 @@
 import os
+import ssl
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
@@ -25,6 +26,18 @@ class GuiConfiguration(BaseModel):
         le=65535,
         description='Standalone GUI listener port.',
     )
+    scheme: Literal['http', 'https'] = Field(
+        default_factory=lambda: os.getenv('MOSAIC_GUI_SCHEME', 'http'),
+        description='Explicit listener protocol; never inferred from certificate files.',
+    )
+    tls_cert_file: Path | None = Field(
+        default_factory=lambda: os.getenv('MOSAIC_GUI_TLS_CERT_FILE') or None,
+        description='External PEM certificate chain for the HTTPS listener.',
+    )
+    tls_key_file: Path | None = Field(
+        default_factory=lambda: os.getenv('MOSAIC_GUI_TLS_KEY_FILE') or None,
+        description='External PEM private key matching the HTTPS certificate.',
+    )
     organisation_logo_path: Path | None = Field(
         default_factory=lambda: os.getenv('MOSAIC_GUI_ORGANISATION_LOGO_PATH') or None,
         description='Optional private PNG outside packaged public assets.',
@@ -45,13 +58,30 @@ class GuiConfiguration(BaseModel):
     @model_validator(mode='after')
     def validate_configuration(self) -> Self:
         """
-        Validate the backend origin and optional operator-supplied PNG.
+        Validate the API origin, listener TLS material and optional PNG.
 
         :return: Validated standalone GUI configuration.
 
-        :raises ValueError: If an origin contains credentials or a logo is not a PNG.
-        :raises OSError: If the configured private logo cannot be read.
+        :raises ValueError: If the origin, TLS configuration or PNG is invalid.
+        :raises OSError: If a configured file cannot be read.
         """
+        if self.scheme == 'http':
+            if self.tls_cert_file is not None or self.tls_key_file is not None:
+                raise ValueError('TLS files require MOSAIC_GUI_SCHEME=https.')
+        else:
+            if self.tls_cert_file is None or self.tls_key_file is None:
+                raise ValueError('HTTPS requires both a certificate and private key.')
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            try:
+                context.load_cert_chain(
+                    str(self.tls_cert_file), str(self.tls_key_file), password=''
+                )
+            except (OSError, ValueError) as error:
+                raise ValueError(
+                    'Unable to load the GUI TLS certificate and private key; '
+                    'check their format, readability and matching key. '
+                    'The key must be unencrypted.'
+                ) from error
         url = AnyHttpUrl(self.backend_url)
         if (
             url.username is not None

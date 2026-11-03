@@ -7,6 +7,12 @@ __pycache__/
 .env
 .env.*
 private-branding/
+private-tls/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 *.png
 .DS_Store
 **/.DS_Store/

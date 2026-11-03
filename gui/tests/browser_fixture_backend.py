@@ -230,6 +230,6 @@ class BrowserFixtureBackend:
 
     @classmethod
     def run(cls) -> None:
-        from waitress import serve
+        from werkzeug.serving import run_simple
 
-        serve(cls().application, host='127.0.0.1', port=8000)
+        run_simple('127.0.0.1', 8000, cls().application, threaded=True)

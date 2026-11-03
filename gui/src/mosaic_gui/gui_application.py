@@ -2,10 +2,10 @@ from pathlib import Path
 
 from dash import Dash
 from flask import Response, send_file
-from waitress import serve
 
 from .gui_configuration import GuiConfiguration
 from .gui_layout import GuiLayout
+from .gui_server import GuiServer
 
 
 class GuiApplication:
@@ -69,11 +69,10 @@ class GuiApplication:
     @staticmethod
     def run() -> None:
         """
-        Serve the standalone GUI with Waitress, without debug or a development reloader.
+        Serve the standalone GUI with Gunicorn and explicit HTTP or HTTPS settings.
         """
         configuration = GuiConfiguration()
-        serve(
+        GuiServer(
             GuiApplication.create_application(configuration).server,
-            host=configuration.host,
-            port=configuration.port,
-        )
+            configuration,
+        ).run()
