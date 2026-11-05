@@ -559,10 +559,26 @@ probe, not server certificate verification. Custom clients must retain verified
 TLS and environment trust or use a verified SSL context with the approved bundle.
 Do not use `verify=False` to resolve certificate failures.
 
-**Outstanding Git exception:** the catalogue transport currently explicitly
-disables TLS verification. `SSL_CERT_FILE` alone does not remove that override.
-Replacing it with verified Dulwich transport using the shared CA bundle remains
-required; the model/MCP findings do not establish Git connection security.
+The Git catalogue transport explicitly enables certificate verification for
+initial clones and cached fetches. It passes `SSL_CERT_FILE` to Dulwich's
+`http.sslCAInfo` setting. If unset, Dulwich uses its standard trusted CA defaults.
+If set, the file must be readable and contain valid PEM CA certificates; an empty,
+missing or invalid configured bundle fails configuration validation. There is no
+fallback to disabled verification. Remote plain HTTP Git URLs are rejected.
+
+One PEM bundle can contain CA certificates for multiple independent trust chains,
+including development and production CAs. The `.pem` or `.cer` extension is not
+significant; the contents must be PEM. Choose the approved trust scope for each
+deployment and include any public CAs needed by its other HTTPS clients. This
+bundle is a trust input, not a server certificate or private-key file.
+
+Set `SSL_CERT_FILE` before starting the backend and restart it after changing the
+path or bundle. No new MOSAIC-specific CA environment variable is required. The
+bundle path and Bearer token are not written to the bare Git cache. Existing
+last-valid-snapshot recovery remains: a failed verified fetch may retain the
+previous validated snapshot, but cannot activate new remote content or retry
+without verification. A configured invalid bundle prevents initialisation even
+when a cached catalogue exists.
 
 #### Approved model access
 

@@ -1,5 +1,3 @@
-"""Dulwich-backed provider for immutable skill-catalogue snapshots."""
-
 import os
 import re
 import shutil
@@ -32,15 +30,12 @@ from dulwich.porcelain import Error as PorcelainError
 from dulwich.repo import Repo
 from urllib3.exceptions import HTTPError
 
-from ...models.skills.git_skill_catalogue_configuration import (
-    GitSkillCatalogueConfiguration,
-)
+from ...models.skills.git_skill_catalogue_configuration import GitSkillCatalogueConfiguration
 from ...models.skills.skill_catalogue_snapshot import SkillCatalogueSnapshot
 from .skill_package_parser import SkillPackageParser
 
 
 class GitSkillCatalogueProvider:
-    """Synchronise and validate skills without requiring a Git executable."""
 
     _ACTIVE_COMMIT_FILE = 'mosaic-active-commit'
 
@@ -531,7 +526,8 @@ class GitSkillCatalogueProvider:
         """
         Create in-memory Dulwich configuration for Git transport.
 
-        :return: Configuration containing the timeout and Bearer authorisation.
+        :return: Configuration with verified TLS, shared CA trust, timeout and
+            transient Bearer authorisation for both clones and cached fetches.
         """
         configuration = ConfigDict()
         configuration.set(
@@ -549,8 +545,16 @@ class GitSkillCatalogueProvider:
         configuration.set(
             (b'http',),
             b'sslVerify',
-            b'false',
+            b'true',
         )
+        if self._configuration.ca_bundle_path is not None:
+            configuration.set(
+                (b'http',),
+                b'sslCAInfo',
+                str(self._configuration.ca_bundle_path.expanduser().resolve()).encode(
+                    'utf-8'
+                ),
+            )
         return configuration
 
     def _persist_transport_configuration(self, repository: Repo) -> None:

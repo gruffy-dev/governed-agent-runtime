@@ -1,6 +1,5 @@
-"""Trusted runtime configuration for the Git-backed skill catalogue."""
-
 import os
+import ssl
 from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
@@ -15,8 +14,6 @@ from pydantic import (
 
 
 class GitSkillCatalogueConfiguration(BaseModel):
-    """Configure secure synchronisation of a remote skill repository."""
-
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,
@@ -70,31 +67,55 @@ class GitSkillCatalogueConfiguration(BaseModel):
         gt=0,
         le=300,
     )
+    ca_bundle_path: Path | None = Field(
+        default_factory=lambda: os.getenv('SSL_CERT_FILE'),
+        description='Optional shared PEM CA bundle supplied through SSL_CERT_FILE.',
+    )
+
+    @model_validator(mode='after')
+    def validate_ca_bundle(self) -> Self:
+        """
+        Reject an explicitly configured CA bundle that cannot establish trust.
+
+        :return: Configuration with a usable bundle or standard CA defaults.
+
+        :raises ValueError: If SSL_CERT_FILE cannot be loaded as a PEM CA bundle.
+        """
+        if self.ca_bundle_path is not None:
+            try:
+                context = ssl.create_default_context(
+                    cafile=str(self.ca_bundle_path.expanduser().resolve())
+                )
+                if not context.get_ca_certs():
+                    raise ValueError('The bundle contains no CA certificates.')
+            except (OSError, ValueError) as error:
+                raise ValueError(
+                    'SSL_CERT_FILE must reference a readable PEM CA bundle.'
+                ) from error
+        return self
+
     @model_validator(mode='after')
     def validate_secure_configuration(self) -> Self:
-        """Reject unsafe paths, embedded credentials, and partial secrets.
+        """
+        Reject unsafe paths, embedded credentials and unencrypted Git HTTP URLs.
 
-        Returns:
-            The validated configuration.
+        :return: The validated configuration.
 
-        Raises:
-            ValueError: If the cache path or credential configuration is
-                unsafe or incomplete.
+        :raises ValueError: If the URL, cache path or credential configuration
+            is unsafe or incomplete.
         """
         if '\n' in self.repository_url or '\r' in self.repository_url:
             raise ValueError('repository_url must not contain newlines.')
 
         parsed_url = urlsplit(self.repository_url)
+        if parsed_url.scheme.lower() == 'http':
+            raise ValueError('Remote HTTP Git repositories must use HTTPS.')
         if parsed_url.username is not None or parsed_url.password is not None:
-            raise ValueError(
-                'repository_url must not contain embedded credentials.'
-            )
+            raise ValueError('repository_url must not contain embedded credentials.')
 
         access_token = self.access_token.get_secret_value()
         if '\n' in access_token or '\r' in access_token:
-            raise ValueError(
-                'access_token must not contain newlines.'
-            )
+            raise ValueError('access_token must not contain newlines.')
 
         cache_path = self.repository_cache_path.expanduser()
         if not cache_path.is_absolute():
