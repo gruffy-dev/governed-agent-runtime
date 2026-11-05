@@ -538,6 +538,32 @@ unnecessary delay. This setting is process-wide. If a future deployment needs
 client-certificate mTLS for any MCP provider, do not disable it globally;
 introduce a provider-scoped transport configuration instead.
 
+#### Shared outbound HTTPS trust
+
+Set `SSL_CERT_FILE` in the backend process environment to the path of the
+approved PEM CA bundle. Mount the bundle separately from the image and keep
+deployment-specific paths and certificate material outside public Git. The same
+bundle can validate multiple approved HTTPS endpoints; each endpoint must still
+present a certificate matching its hostname and the required intermediate chain.
+
+Target-environment inspection reported no explicit TLS bypass in the configured
+GeminiViaAccessLayer or MCP Streamable HTTP interfaces. Their expected default
+HTTPX/OpenSSL behaviour uses this bundle with certificate and hostname
+verification enabled. Confirm environment trust and actual transport construction
+on SDK upgrades; source inspection alone does not establish live TLS verification.
+Test model access, MCP discovery and tool execution over HTTPS. A CA bundle does
+not protect a plain HTTP endpoint.
+
+`GOOGLE_API_USE_CLIENT_CERTIFICATE=false` controls the separate client-certificate
+probe, not server certificate verification. Custom clients must retain verified
+TLS and environment trust or use a verified SSL context with the approved bundle.
+Do not use `verify=False` to resolve certificate failures.
+
+**Outstanding Git exception:** the catalogue transport currently explicitly
+disables TLS verification. `SSL_CERT_FILE` alone does not remove that override.
+Replacing it with verified Dulwich transport using the shared CA bundle remains
+required; the model/MCP findings do not establish Git connection security.
+
 #### Approved model access
 
 | Environment variable | Purpose |
