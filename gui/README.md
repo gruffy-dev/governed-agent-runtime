@@ -180,8 +180,13 @@ Splunk, MQ or Observability), not a discovered endpoint or hostname. Unknown or
 unsafe metadata falls back to a generic operation label. Raw arguments, results,
 instructions, addresses and thought signatures are never rendered in the panel.
 
-The panel reads existing native ADK function-call and function-response events;
-there is no new backend protocol or model narration. It never advances stages on
+The panel reads native ADK function-call and function-response shapes. The backend
+forwards only allowlisted, redacted activity: operation names and correlation IDs,
+confirmed Skill names and declared capability references, and available capability
+descriptions. Other arguments, instructions, results, state and provider details
+remain excluded. Both the GUI update and the backend activity-filter update are
+required; a backend that forwards only answer text cannot supply tool progress.
+There are no custom SSE event names or model narration. It never advances stages on
 a timer. Parallel activity counts appear only when calls carry reliable IDs.
 Without matching events or safe metadata, it remains generic. A ticking elapsed
 timer measures waiting time, not backend liveness. The panel disappears and its

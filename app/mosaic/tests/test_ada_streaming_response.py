@@ -159,6 +159,216 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(result, [{'error': 'Invocation failed'}])
 
+    async def test_native_activity_survives_the_public_filter_without_private_payloads(
+        self,
+    ) -> None:
+        parts = [
+            {
+                'functionCall': {
+                    'name': 'load_skills',
+                    'id': 'load',
+                    'args': {'private': 'private'},
+                }
+            },
+            {
+                'functionResponse': {
+                    'name': 'load_skills',
+                    'id': 'load',
+                    'response': {
+                        'status': 'loaded',
+                        'catalogue_commit_sha': 'private',
+                        'loaded_skills': [
+                            {
+                                'name': 'inspect-logs',
+                                'instructions': 'private',
+                                'required_capability_names': ['splunk.pod.logs.read'],
+                                'optional_capability_names': [],
+                            }
+                        ],
+                    },
+                }
+            },
+            {
+                'functionCall': {
+                    'name': 'discover_capabilities',
+                    'id': 'discovery',
+                    'args': {'target_name': 'private'},
+                }
+            },
+            {
+                'functionResponse': {
+                    'name': 'discover_capabilities',
+                    'id': 'discovery',
+                    'response': {
+                        'status': 'available',
+                        'target': {'endpoint': 'private'},
+                        'capabilities': [
+                            {
+                                'name': 'splunk.pod.logs.read',
+                                'available': True,
+                                'description': 'Read recent application logs.',
+                                'provider': 'private',
+                                'required_semantic_argument_names': ['private'],
+                            }
+                        ],
+                    },
+                }
+            },
+            {
+                'functionCall': {
+                    'name': 'execute_capability',
+                    'id': 'check',
+                    'args': {
+                        'capability_name': 'splunk.pod.logs.read',
+                        'semantic_arguments': {'token': 'private'},
+                    },
+                }
+            },
+            {
+                'functionResponse': {
+                    'name': 'execute_capability',
+                    'id': 'check',
+                    'response': {
+                        'status': 'failed',
+                        'evidence': 'private',
+                        'error_message': 'private',
+                    },
+                }
+            },
+        ]
+        records = [
+            dict(
+                self.record,
+                partial=False,
+                actions={'stateDelta': {'private': 'private'}},
+                content={
+                    'role': 'model' if 'functionCall' in part else 'user',
+                    'parts': [part],
+                },
+            )
+            for part in parts
+        ]
+        projected = await self._collect(
+            [b''.join(self._frame(record) for record in records)]
+        )
+        self.assertEqual(len(projected), 6)
+        calls = [record['content']['parts'][0] for record in projected]
+        self.assertEqual(
+            calls[0]['functionCall'], {'name': 'load_skills', 'id': 'load', 'args': {}}
+        )
+        self.assertEqual(
+            calls[1]['functionResponse']['response']['loaded_skills'],
+            [
+                {
+                    'name': 'inspect-logs',
+                    'required_capability_names': ['splunk.pod.logs.read'],
+                    'optional_capability_names': [],
+                }
+            ],
+        )
+        self.assertEqual(
+            calls[3]['functionResponse']['response']['capabilities'],
+            [
+                {
+                    'name': 'splunk.pod.logs.read',
+                    'available': True,
+                    'description': 'Read recent application logs.',
+                }
+            ],
+        )
+        self.assertEqual(
+            calls[4]['functionCall']['args'],
+            {'capability_name': 'splunk.pod.logs.read'},
+        )
+        self.assertEqual(calls[5]['functionResponse']['response'], {})
+        self.assertNotIn('private', json.dumps(projected))
+
+    async def test_partial_hidden_unmatched_and_undeclared_activity_is_not_exposed(
+        self,
+    ) -> None:
+        records = [
+            dict(
+                self.record,
+                content={
+                    'role': 'model',
+                    'parts': [
+                        {
+                            'functionCall': {
+                                'name': 'load_skills',
+                                'id': 'partial',
+                                'args': {},
+                            }
+                        }
+                    ],
+                },
+            ),
+            dict(
+                self.record,
+                partial=False,
+                content={
+                    'role': 'user',
+                    'parts': [
+                        {
+                            'functionResponse': {
+                                'name': 'load_skills',
+                                'id': 'unmatched',
+                                'response': {'status': 'loaded', 'private': 'private'},
+                            }
+                        }
+                    ],
+                },
+            ),
+            dict(
+                self.record,
+                partial=False,
+                branch='private',
+                content={
+                    'role': 'model',
+                    'parts': [
+                        {
+                            'functionCall': {
+                                'name': 'discover_skills',
+                                'id': 'hidden',
+                                'args': {},
+                            }
+                        }
+                    ],
+                },
+            ),
+            dict(
+                self.record,
+                partial=False,
+                content={
+                    'role': 'model',
+                    'parts': [
+                        {
+                            'functionCall': {
+                                'name': 'execute_capability',
+                                'id': 'call',
+                                'args': {'capability_name': 'private.unknown.read'},
+                            }
+                        }
+                    ],
+                },
+            ),
+        ]
+        projected = await self._collect(
+            [b''.join(self._frame(record) for record in records)]
+        )
+        self.assertEqual(len(projected), 1)
+        self.assertEqual(
+            projected[0]['content']['parts'],
+            [
+                {
+                    'functionCall': {
+                        'name': 'execute_capability',
+                        'id': 'call',
+                        'args': {},
+                    }
+                }
+            ],
+        )
+
     async def test_invalid_truncated_and_oversized_frames_fail_safely(self) -> None:
         for body in (
             b'data: invalid-json\n\n',
@@ -238,6 +448,7 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                     private,
                     AdaApplicationAdapterConfiguration(asgi_spec_version=version),
                 )
+
                 async def on_close(
                     normal_eof: bool,
                     private_closed: asyncio.Event = private_closed,
@@ -247,7 +458,10 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
                     finalised.append(normal_eof)
 
                 response = await AdaStreamingResponse.create(
-                    transport.stream_response('POST', '/run_sse'), 8192, 'mosaic', on_close
+                    transport.stream_response('POST', '/run_sse'),
+                    8192,
+                    'mosaic',
+                    on_close,
                 )
 
                 async def receive(first_sent: asyncio.Event = first_sent) -> Message:
@@ -290,7 +504,24 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
             }
             yield {
                 'type': 'http.response.body',
-                'body': self._frame(self.record),
+                'body': self._frame(
+                    dict(
+                        self.record,
+                        partial=False,
+                        content={
+                            'role': 'model',
+                            'parts': [
+                                {
+                                    'functionCall': {
+                                        'name': 'discover_skills',
+                                        'id': 'discovery',
+                                        'args': {'private': 'private'},
+                                    }
+                                }
+                            ],
+                        },
+                    )
+                ),
                 'more_body': True,
             }
             await gate.wait()
@@ -320,6 +551,18 @@ class TestAdaStreamingResponse(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(first_sent.wait(), 2)
             self.assertFalse(task.done())
             self.assertEqual(len(captured), 1)
+            self.assertEqual(
+                json.loads(captured[0][5:])['content']['parts'],
+                [
+                    {
+                        'functionCall': {
+                            'name': 'discover_skills',
+                            'id': 'discovery',
+                            'args': {},
+                        },
+                    }
+                ],
+            )
             gate.set()
             await asyncio.wait_for(task, 2)
             self.assertEqual(len(captured), 2)

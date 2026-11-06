@@ -7,6 +7,7 @@ from starlette.responses import StreamingResponse
 from starlette.types import Message, Receive, Scope, Send
 
 from ..ada.ada_application_error import AdaApplicationError
+from .adk_tool_activity_projection import AdkToolActivityProjection
 
 
 class AdaStreamingResponse(StreamingResponse):
@@ -18,7 +19,7 @@ class AdaStreamingResponse(StreamingResponse):
         on_close: Callable[[bool], Awaitable[None]] | None = None,
     ) -> None:
         """
-        Relay ADK text events without reconciling partial and final answers.
+        Relay public ADK text and redacted tool activity without reconciling answers.
 
         :param stream: Private stream whose successful headers were checked.
         :param maximum_event_bytes: Existing transport bound applied per SSE frame.
@@ -28,6 +29,7 @@ class AdaStreamingResponse(StreamingResponse):
         self._stream = stream
         self._maximum_event_bytes = maximum_event_bytes
         self._public_agent_name = public_agent_name
+        self._tool_activity = AdkToolActivityProjection()
         self._on_close = on_close
         self._normal_eof = False
         self._failed = False
@@ -175,7 +177,7 @@ class AdaStreamingResponse(StreamingResponse):
 
     def _public_frame(self, record: dict[str, Any]) -> bytes | None:
         """
-        Retain ADK answer shape while excluding thoughts, tools, state and diagnostics.
+        Retain ADK answer and redacted activity shapes, excluding private payloads.
 
         Preserve partial and final text unchanged, including final repeated text.
         Metadata kept here describes the answer; the GUI must not render it as text.
@@ -199,7 +201,7 @@ class AdaStreamingResponse(StreamingResponse):
             record.get('author') != self._public_agent_name
             or record.get('branch')
             or not isinstance(content, dict)
-            or content.get('role') != 'model'
+            or content.get('role') not in ('model', 'user', 'tool')
         ):
             return None
         parts = content.get('parts')
@@ -209,11 +211,16 @@ class AdaStreamingResponse(StreamingResponse):
             raise ValueError('Invalid private model parts.')
         public_parts = []
         for part in parts:
-            if part.get('thought') or 'text' not in part:
+            if part.get('thought'):
                 continue
-            if not isinstance(part['text'], str):
-                raise TypeError('Invalid private model text.')
-            public_parts.append({'text': part['text']})
+            if content['role'] == 'model' and 'text' in part:
+                if not isinstance(part['text'], str):
+                    raise TypeError('Invalid private model text.')
+                public_parts.append({'text': part['text']})
+            if record.get('partial') is not True:
+                activity = self._tool_activity.project(part, content['role'])
+                if activity is not None:
+                    public_parts.append(activity)
         if not public_parts:
             return None
         public = {
@@ -230,7 +237,7 @@ class AdaStreamingResponse(StreamingResponse):
             )
             if key in record and isinstance(record[key], (str, bool, int, float))
         }
-        public['content'] = {'role': 'model', 'parts': public_parts}
+        public['content'] = {'role': content['role'], 'parts': public_parts}
         encoded = json.dumps(public, ensure_ascii=False, allow_nan=False).encode(
             'utf-8'
         )
