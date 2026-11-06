@@ -274,6 +274,37 @@ class GuiLayout:
                                             className='workspace-alert',
                                         ),
                                         html.Div(
+                                            [
+                                                html.Span(
+                                                    className='spinner-border spinner-border-sm',
+                                                    **{'aria-hidden': 'true'},
+                                                ),
+                                                html.Div(
+                                                    [
+                                                        html.Div(
+                                                            id='invocation-skills',
+                                                            className='invocation-skills',
+                                                        ),
+                                                        html.Div(
+                                                            id='invocation-stage',
+                                                            role='status',
+                                                            **{'aria-live': 'polite'},
+                                                        ),
+                                                    ],
+                                                    className='invocation-description',
+                                                ),
+                                                html.Span(
+                                                    id='invocation-elapsed',
+                                                    className='invocation-elapsed',
+                                                    title='Elapsed request time; not a backend heartbeat.',
+                                                    **{'aria-live': 'off'},
+                                                ),
+                                            ],
+                                            id='invocation-activity',
+                                            className='invocation-activity',
+                                            style={'display': 'none'},
+                                        ),
+                                        html.Div(
                                             id='messages',
                                             className='messages',
                                             **{

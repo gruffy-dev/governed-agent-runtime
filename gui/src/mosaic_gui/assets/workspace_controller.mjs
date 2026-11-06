@@ -1,5 +1,6 @@
 import {ApiClient} from "./api_client.mjs";
 import {AdkStream} from "./adk_stream.mjs";
+import {InvocationActivity} from "./invocation_activity.mjs";
 
 export class WorkspaceController {
     #client;
@@ -12,6 +13,9 @@ export class WorkspaceController {
     #conversation = null;
     #conversations = [];
     #messages = [];
+    #activityTimer = null;
+    #activitySkills = null;
+    #activityStage = null;
     constructor(root) {
         /**
          * Initialise a browser-only workspace with no persistent token or chat state.
@@ -148,6 +152,7 @@ export class WorkspaceController {
         /**
          * Remove previous-user data from memory and the UI without browser storage.
          */
+        this.#clearActivity();
         this.#signedIn = false;
         this.#workspace = this.#conversation = null;
         this.#conversations = this.#messages = [];
@@ -234,6 +239,7 @@ export class WorkspaceController {
         const id = this.#conversation.conversation_id;
         const controller = new AbortController();
         this.#streamController = controller;
+        this.#startActivity(controller);
         this.#props("message-input", {value: ""});
         this.#props("workspace-alert", {is_open: false});
         this.#messages.push({role: "user", text}, {role: "assistant", text: ""});
@@ -248,11 +254,15 @@ export class WorkspaceController {
             correlationId = response.headers.get("x-correlation-id");
             reader = response.body.getReader();
             const decoder = new TextDecoder();
+            const activity = new InvocationActivity(this.#workspace?.skills || [], view => {
+                if (epoch === this.#epoch && this.#streamController === controller) this.#renderActivity(view);
+            });
             const projection = new AdkStream(answer => {
                 if (epoch !== this.#epoch) return;
+                activity.writing();
                 this.#messages[answerIndex].text = answer;
                 this.#renderMessages();
-            });
+            }, event => activity.accept(event));
             while (true) {
                 const {value, done} = await reader.read();
                 if (done) break;
@@ -265,6 +275,7 @@ export class WorkspaceController {
             if (!controller.signal.aborted && !failure.correlationId) failure.correlationId = correlationId;
             controller.abort();
         } finally {
+            if (this.#streamController === controller) this.#clearActivity();
             try {if (reader) {await reader.cancel(); reader.releaseLock();}} catch { /* The transport may already be closed. */ }
             if (epoch !== this.#epoch) return;
             this.#streamController = null;
@@ -291,6 +302,52 @@ export class WorkspaceController {
                 }
             }
         }
+    }
+    #startActivity(controller) {
+        /**
+         * Show elapsed waiting time without inventing model or tool activity.
+         * :param controller: Current stream controller guarding stale timer callbacks.
+         */
+        this.#clearActivity();
+        const started = performance.now();
+        this.#props("invocation-activity", {style: {display: "flex"}});
+        this.#renderActivity({skills: [], operation: "Waiting for a response", platform: null});
+        const tick = () => {
+            if (this.#streamController !== controller) return;
+            const seconds = Math.floor((performance.now() - started) / 1000);
+            this.#props("invocation-elapsed", {children: seconds < 60 ? `${seconds}s elapsed` : `${Math.floor(seconds / 60)}m ${seconds % 60}s elapsed`});
+        };
+        tick();
+        this.#activityTimer = setInterval(tick, 1000);
+    }
+    #clearActivity() {
+        /**
+         * Remove transient activity and stop its timer on every terminal or identity path.
+         */
+        if (this.#activityTimer !== null) clearInterval(this.#activityTimer);
+        this.#activityTimer = null;
+        this.#activitySkills = this.#activityStage = null;
+        this.#props("invocation-activity", {style: {display: "none"}});
+        this.#props("invocation-stage", {children: ""});
+        this.#props("invocation-skills", {children: ""});
+        this.#props("invocation-elapsed", {children: ""});
+    }
+    #renderActivity(view) {
+        /**
+         * Render approved Skill titles and semantic operations as plain text.
+         * :param view: Bounded activity projection with no provider addresses or payloads.
+         */
+        const stage = [view.platform, view.operation].filter(Boolean).join(" · ");
+        if (stage !== this.#activityStage) {
+            this.#activityStage = stage;
+            this.#props("invocation-stage", {children: stage});
+        }
+        const skills = view.skills;
+        const selection = JSON.stringify(skills);
+        if (selection === this.#activitySkills) return;
+        this.#activitySkills = selection;
+        const children = skills.length === 1 ? `Skill: ${skills[0]}` : skills.length > 1 ? this.#element("Details", {children: [this.#element("Summary", {children: `${skills.length} selected skills`}), this.#element("Ul", {children: skills.map(title => this.#element("Li", {children: title}))})]}) : "";
+        this.#props("invocation-skills", {children});
     }
     async #refreshHistory(epoch) {
         /**
@@ -324,7 +381,7 @@ export class WorkspaceController {
         if (!this.#messages.length) {
             children = [this.#element("Div", {className: "welcome", children: [this.#element("Img", {src: "/assets/tangram.svg", alt: "", className: "welcome-symbol"}), this.#element("H2", {children: "What would you like to work on?"}), this.#element("P", {children: "Ask a question or describe your Goal. MOSAIC brings together your assigned Skills and the capabilities they need."}), this.#element("Div", {className: "welcome-hint", children: "Your Skills are shown on the right. You can read earlier conversations or start something new."})]})];
         } else {
-            children = this.#messages.map(message => this.#element("Div", {className: "message message-" + message.role, children: [this.#element("Div", {className: "message-label", children: message.role === "user" ? "You" : "MOSAIC"}), message.role === "user" ? this.#element("Div", {className: "message-body", children: message.text}) : message.text ? this.#element("Markdown", {className: "message-body", children: message.text, dangerously_allow_html: false, link_target: "_blank", mathjax: false, highlight_config: {theme: "light"}}, "dash_core_components") : this.#element("Div", {className: "streaming-placeholder", children: "Working on your request"})]}));
+            children = this.#messages.map(message => this.#element("Div", {className: "message message-" + message.role, children: [this.#element("Div", {className: "message-label", children: message.role === "user" ? "You" : "MOSAIC"}), message.role === "user" ? this.#element("Div", {className: "message-body", children: message.text}) : message.text ? this.#element("Markdown", {className: "message-body", children: message.text, dangerously_allow_html: false, link_target: "_blank", mathjax: false, highlight_config: {theme: "light"}}, "dash_core_components") : this.#element("Div", {className: "message-body", children: ""})]}));
         }
         this.#props("messages", {children});
         requestAnimationFrame(() => {

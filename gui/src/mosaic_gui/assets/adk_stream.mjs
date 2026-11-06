@@ -5,12 +5,15 @@ export class AdkStream {
     #finalIds = new Set();
     #sawFinal = false;
     #onText;
-    constructor(onText) {
+    #onEvent;
+    constructor(onText, onEvent = null) {
         /**
          * Bind native ADK text projection to one incremental display callback.
          * :param onText: Callback receiving only the current displayable answer.
+         * :param onEvent: Optional observer for native events, separate from answer text.
          */
         this.#onText = onText;
+        this.#onEvent = onEvent;
     }
     feed(chunk) {
         /**
@@ -47,6 +50,7 @@ export class AdkStream {
         try { event = JSON.parse(data); } catch { throw new Error("The backend returned an invalid stream record."); }
         if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("The backend returned an invalid stream record.");
         if (event.error || event.errorCode || event.error_code) throw new Error("The model could not complete this response. Start a new conversation if it is marked interrupted.");
+        if (!event.branch && event.partial !== true) this.#onEvent?.(event);
         if (event.branch || event.content?.role !== "model" || !Array.isArray(event.content.parts)) return;
         if (event.content.parts.some(part => part?.functionCall || part?.function_call || part?.functionResponse || part?.function_response)) return;
         const text = event.content.parts.filter(part => !part?.thought && typeof part?.text === "string").map(part => part.text).join("");

@@ -170,6 +170,27 @@ request; the backend may permanently mark that conversation interrupted.
 Interrupted history stays readable and its composer is disabled. No stream is
 reconnected, replayed or automatically retried. Start a new conversation.
 
+While a response is active, one temporary activity panel shows the most recent
+observed tool operation and elapsed request time. Successful `load_skills` results
+are matched to assigned workspace titles; multiple confirmed Skills appear in an
+expandable list. Successful capability discovery provides approved operation
+descriptions, used only for capabilities declared by those confirmed Skills.
+Platform labels describe the semantic family (Kubernetes / OpenShift, OpenShift,
+Splunk, MQ or Observability), not a discovered endpoint or hostname. Unknown or
+unsafe metadata falls back to a generic operation label. Raw arguments, results,
+instructions, addresses and thought signatures are never rendered in the panel.
+
+The panel reads existing native ADK function-call and function-response events;
+there is no new backend protocol or model narration. It never advances stages on
+a timer. Parallel activity counts appear only when calls carry reliable IDs.
+Without matching events or safe metadata, it remains generic. A ticking elapsed
+timer measures waiting time, not backend liveness. The panel disappears and its
+timer stops on completion, error, cancellation or sign-out; progress is neither
+saved in chat history nor replayed when reopening a conversation. A follow-up
+that reuses Skills without another load event may have no selected-Skill label.
+Real event timing depends on the installed ADA/ADK and any gateway buffering;
+validate this against the target runtime. No reasoning summaries are inferred.
+
 Sign-out clears the cookie through the backend and clears GUI user data. A
 different token loads a different workspace. Stale responses from an earlier
 sign-in cannot repopulate the UI. No token is placed in URLs, browser storage,
@@ -199,7 +220,7 @@ invalid TLS configuration. They do not install certificates into a trust store.
 
 ```sh
 PYTHONPATH=src .venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -q
-node --test tests/test_adk_stream.mjs tests/test_api_client.mjs tests/test_workspace_controller.mjs
+node --test tests/test_adk_stream.mjs tests/test_api_client.mjs tests/test_invocation_activity.mjs tests/test_workspace_controller.mjs
 ```
 
 BrowserFixtureBackend in tests/ is synthetic browser-QA data only. It is not

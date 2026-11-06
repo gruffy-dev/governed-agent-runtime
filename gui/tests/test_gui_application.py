@@ -167,6 +167,7 @@ class TestGuiApplication(unittest.TestCase):
             '10_workspace.css',
             'api_client.mjs',
             'adk_stream.mjs',
+            'invocation_activity.mjs',
             'workspace_controller.mjs',
             'tangram.svg',
         ):

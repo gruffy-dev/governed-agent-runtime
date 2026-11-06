@@ -7,7 +7,8 @@ from flask import Flask, Response, jsonify, request
 
 
 class BrowserFixtureBackend:
-    def __init__(self) -> None:
+    def __init__(self, gui_origin: str = 'http://127.0.0.1:8050') -> None:
+        self.gui_origin = gui_origin
         self.records: dict[str, dict] = {}
         self.application = Flask(__name__)
         self.application.after_request(self.cors)
@@ -58,7 +59,7 @@ class BrowserFixtureBackend:
             )
 
     def cors(self, response: Response) -> Response:
-        response.headers['Access-Control-Allow-Origin'] = 'http://127.0.0.1:8050'
+        response.headers['Access-Control-Allow-Origin'] = self.gui_origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST'
@@ -191,6 +192,80 @@ class BrowserFixtureBackend:
             answer = '## Synthetic summary\n\nThe response arrived incrementally.\n\n```python\nprint("hello")\n```\n\n| Check | Result |\n| --- | --- |\n| Formatting | Ready |\n\n**This is test data, not a live model response.**'
             chunks = [answer[index : index + 14] for index in range(0, len(answer), 14)]
             try:
+                if record['owner'].endswith('-a'):
+                    for part in (
+                        {'functionCall': {'name': 'load_skills', 'id': 'load'}},
+                        {
+                            'functionResponse': {
+                                'name': 'load_skills',
+                                'id': 'load',
+                                'response': {
+                                    'status': 'loaded',
+                                    'loaded_skills': [
+                                        {
+                                            'name': 'service-health',
+                                            'required_capability_names': [
+                                                'kubernetes.pods.status.read'
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        },
+                        {
+                            'functionCall': {
+                                'name': 'discover_capabilities',
+                                'id': 'discovery',
+                            }
+                        },
+                        {
+                            'functionResponse': {
+                                'name': 'discover_capabilities',
+                                'id': 'discovery',
+                                'response': {
+                                    'status': 'available',
+                                    'capabilities': [
+                                        {
+                                            'name': 'kubernetes.pods.status.read',
+                                            'available': True,
+                                            'description': 'Review synthetic workload readiness.',
+                                        }
+                                    ],
+                                },
+                            }
+                        },
+                        {
+                            'functionCall': {
+                                'name': 'execute_capability',
+                                'id': 'check',
+                                'args': {
+                                    'capability_name': 'kubernetes.pods.status.read',
+                                },
+                            }
+                        },
+                        {
+                            'functionResponse': {
+                                'name': 'execute_capability',
+                                'id': 'check',
+                                'response': {'status': 'success'},
+                            }
+                        },
+                    ):
+                        yield (
+                            'data: '
+                            + json.dumps(
+                                {
+                                    'content': {
+                                        'role': 'model'
+                                        if 'functionCall' in part
+                                        else 'user',
+                                        'parts': [part],
+                                    }
+                                }
+                            )
+                            + '\n\n'
+                        )
+                        time.sleep(2 if 'slow' in text.lower() else 0.08)
                 for chunk in chunks:
                     time.sleep(0.35 if 'slow' in text.lower() else 0.03)
                     yield (
