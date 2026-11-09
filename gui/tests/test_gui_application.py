@@ -106,7 +106,7 @@ class TestGuiApplication(unittest.TestCase):
             pending.extend(children if isinstance(children, list) else [children])
         for identifier, name in (
             ('history-show', 'Conversations'),
-            ('skills-show', 'Skills'),
+            ('skills-show', 'Current Skills'),
         ):
             props = controls[identifier]
             self.assertEqual(props['className'], 'panel-show')

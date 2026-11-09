@@ -261,13 +261,13 @@ class GuiLayout:
                                                                     },
                                                                 ),
                                                                 html.Span(
-                                                                    'Show Skills',
+                                                                    'Show Current Skills',
                                                                     className='visually-hidden',
                                                                 ),
                                                             ],
                                                             id='skills-show',
                                                             className='panel-show',
-                                                            title='Show Skills',
+                                                            title='Show Current Skills',
                                                             color='link',
                                                             size='sm',
                                                             style={'display': 'none'},
@@ -388,13 +388,13 @@ class GuiLayout:
                                     [
                                         html.Div(
                                             [
-                                                html.H2('Your Skills'),
+                                                html.H2('Current Skills'),
                                                 dbc.Button(
                                                     'Hide',
                                                     id='skills-toggle',
                                                     color='link',
                                                     size='sm',
-                                                    title='Hide Skills',
+                                                    title='Hide Current Skills',
                                                 ),
                                             ],
                                             className='panel-heading',

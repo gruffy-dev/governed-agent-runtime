@@ -82,7 +82,7 @@ class TestWorkspaceController {
             const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example", "example/z-function"]};
             const beta = {skill_id: "beta-skill", display_name: "Beta", description: "Second Skill", groups: ["example", "example/a-function"]};
             const currentSkills = () => element("current-skills").children.map(item =>
-                item.type === "Div" ? item.props.children[0].props.children : item.props.children);
+                item.type === "Div" ? item.props.children[0].props.children[0].props.children : item.props.children);
             try {
                 state.catalogue = [alpha, beta];
                 state.skills = [alpha];

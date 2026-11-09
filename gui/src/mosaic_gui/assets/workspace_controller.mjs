@@ -391,7 +391,7 @@ export class WorkspaceController {
         const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 100;
         let children;
         if (!this.#messages.length) {
-            children = [this.#element("Div", {className: "welcome", children: [this.#element("Img", {src: "/assets/tangram.svg", alt: "", className: "welcome-symbol"}), this.#element("H2", {children: "What would you like to work on?"}), this.#element("P", {children: "Ask a question or describe your Goal. MOSAIC brings together your assigned Skills and the capabilities they need."}), this.#element("Div", {className: "welcome-hint", children: "Your Skills are shown on the right. You can read earlier conversations or start something new."})]})];
+            children = [this.#element("Div", {className: "welcome", children: [this.#element("Img", {src: "/assets/tangram.svg", alt: "", className: "welcome-symbol"}), this.#element("H2", {children: "What would you like to work on?"}), this.#element("P", {children: "Ask a question or describe your Goal. MOSAIC brings together your assigned Skills and the capabilities they need."}), this.#element("Div", {className: "welcome-hint", children: "Open Current Skills to see what is available. You can read earlier conversations or start something new."})]})];
         } else {
             children = this.#messages.map(message => this.#element("Div", {className: "message message-" + message.role, children: [this.#element("Div", {className: "message-label", children: message.role === "user" ? "You" : "MOSAIC"}), message.role === "user" ? this.#element("Div", {className: "message-body", children: message.text}) : message.text ? this.#element("Markdown", {className: "message-body", children: message.text, dangerously_allow_html: false, link_target: "_blank", mathjax: false, highlight_config: {theme: "light"}}, "dash_core_components") : this.#element("Div", {className: "message-body", children: ""})]}));
         }
@@ -407,19 +407,10 @@ export class WorkspaceController {
          */
         const skills = this.#workspace?.skills || [];
         this.#props("skill-count", {children: `${skills.length} assigned ${skills.length === 1 ? "Skill" : "Skills"}`});
-        if (!skills.length) {this.#props("skills-list", {children: this.#element("P", {className: "empty-skills", children: "No Skills are selected. Open the Skills tab to choose them."})}); return;}
-        const groups = new Map();
-        for (const skill of skills) {
-            const group = [...skill.groups].sort((left, right) => right.split("/").length - left.split("/").length || left.localeCompare(right))[0] || "Assigned Skills";
-            if (!groups.has(group)) groups.set(group, []);
-            groups.get(group).push(skill);
-        }
-        const items = [...groups].sort(([left], [right]) => left.localeCompare(right)).map(([group, assigned], index) => this.#element("AccordionItem", {
-            item_id: "group-" + index,
-            title: group.split("/").map(value => value.replaceAll("-", " ")).join(" › ") + ` (${assigned.length})`,
-            children: assigned.map(skill => this.#element("Details", {className: "skill-entry", children: [this.#element("Summary", {children: skill.display_name}), this.#element("P", {className: "skill-description", children: skill.description})]})),
-        }, "dash_bootstrap_components"));
-        this.#props("skills-list", {children: this.#element("Accordion", {children: items, always_open: true, start_collapsed: false, active_item: items.map(item => item.props.item_id)}, "dash_bootstrap_components")});
+        const children = this.#selectedSkillCards(skills);
+        this.#props("skills-list", {children: children.length ? children : this.#element("P", {
+            className: "browser-empty", children: "No Skills are selected. Open the Skills tab to choose them.",
+        })});
     }
     #showWorkspaceView(skills) {
         /**
@@ -567,10 +558,7 @@ export class WorkspaceController {
                             children: item.display_name,
                         }),
                         ...(level === "search" && path ? [this.#element("Small", {children: path.replaceAll("/", " › ").replaceAll("-", " ")})] : []),
-                        this.#element("Details", {children: [
-                            this.#element("Summary", {children: "Description"}),
-                            this.#element("P", {children: item.description}),
-                        ]}),
+                        this.#element("P", {className: "skill-description", children: item.description}),
                     ]});
                 }
                 const active = item === (level === "domains" ? editor.domain : editor.function);
@@ -608,7 +596,20 @@ export class WorkspaceController {
          * Update the selection panel and indicate changes that have yet to be saved.
          */
         const editor = this.#skillEditor;
-        const ordered = [...editor.selected.values()].map(skill => {
+        const items = this.#selectedSkillCards(editor.selected.values(), true);
+        this.#props("current-skills", {children: items.length ? items : "No Skills selected."});
+        this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
+        this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
+    }
+    #selectedSkillCards(skills, editable = false) {
+        /**
+         * Render the same domain, function and Skill cards in both workspace views.
+         * :param skills: Saved Skills or the editor's draft selection.
+         * :param editable: Whether to show removal controls.
+         *
+         * :return: Group headings and Skill cards in display order.
+         */
+        const ordered = [...skills].map(skill => {
             const groups = [...skill.groups].sort();
             const path = groups.find(group => group.includes("/")) || groups[0] || "~";
             const [domain, category = "~"] = path.split("/");
@@ -639,17 +640,18 @@ export class WorkspaceController {
                 className: "selected-item",
                 key: skill.skill_id,
                 children: [
-                    this.#element("Strong", {children: skill.display_name}),
-                    this.#element("Button", {
+                    this.#element("Div", {children: [
+                        this.#element("Strong", {children: skill.display_name}),
+                        this.#element("P", {className: "skill-description", children: skill.description}),
+                    ]}),
+                    ...(editable ? [this.#element("Button", {
                         id: "skill-remove-" + skill.skill_id, type: "button", className: "btn btn-link",
                         "aria-label": "Remove " + skill.display_name, children: "×",
-                    }),
+                    })] : []),
                 ],
             }));
         }
-        this.#props("current-skills", {children: items.length ? items : "No Skills selected."});
-        this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
-        this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
+        return items;
     }
     #hasSkillChanges() {
         /**
