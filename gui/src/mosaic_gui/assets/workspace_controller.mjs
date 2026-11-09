@@ -665,9 +665,8 @@ export class WorkspaceController {
                 }));
                 if (skill.withdrawn) items.push(this.#element("P", {
                     className: "withdrawn-note",
-                    children: editable
-                        ? "These Skills will not be used in new Goals. Remove them and click Save Skills to update your workspace."
-                        : "These Skills will not be used in new Goals.",
+                    children: "These Skills have been withdrawn from the published catalogue and will not be used in new Goals." +
+                        (editable ? " Remove them and click Save Skills to update your workspace." : ""),
                 }));
                 currentDomain = domain;
                 currentCategory = null;
