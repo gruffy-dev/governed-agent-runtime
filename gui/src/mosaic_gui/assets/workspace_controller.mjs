@@ -407,7 +407,7 @@ export class WorkspaceController {
          */
         const skills = this.#workspace?.skills || [];
         this.#props("skill-count", {children: `${skills.length} assigned ${skills.length === 1 ? "Skill" : "Skills"}`});
-        const children = this.#selectedSkillCards(skills);
+        const children = this.#selectedSkillCards(this.#workspace ? this.#workspaceSkillSelection(this.#workspace) : []);
         this.#props("skills-list", {children: children.length ? children : this.#element("P", {
             className: "browser-empty", children: "No Skills are selected. Open the Skills tab to choose them.",
         })});
@@ -441,9 +441,9 @@ export class WorkspaceController {
             this.#workspace = workspace;
             this.#renderSkills();
             editor.version = workspace.version;
-            editor.selected = new Map(workspace.skills.map(skill => [skill.skill_id, skill]));
+            editor.savedSkills = this.#workspaceSkillSelection(workspace);
+            editor.selected = new Map(editor.savedSkills.map(skill => [skill.skill_id, skill]));
             editor.saved = new Set(editor.selected.keys());
-            editor.savedSkills = workspace.skills;
             editor.ready = true;
             this.#renderCurrentSkills();
             if (editor.version === null) {
@@ -597,8 +597,22 @@ export class WorkspaceController {
         const editor = this.#skillEditor;
         const items = this.#selectedSkillCards(editor.selected.values(), true);
         this.#props("current-skills", {children: items.length ? items : "No Skills selected."});
-        this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
+        const available = [...editor.selected.values()].filter(skill => !skill.withdrawn).length;
+        this.#props("skill-selection-count", {children: `${available} selected`});
         this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
+    }
+    #workspaceSkillSelection(workspace) {
+        /**
+         * Keep withdrawn references in drafts until their owner removes them.
+         * :param workspace: Saved workspace metadata returned by the backend.
+         *
+         * :return: Available Skills and withdrawn references for Current Skills.
+         */
+        return [...workspace.skills, ...(workspace.withdrawn_skill_ids || []).map(skill_id => ({
+            skill_id,
+            display_name: this.#skillGroupLabel(skill_id, "Withdrawn Skill"),
+            withdrawn: true,
+        }))];
     }
     #skillDetails(skill, open = false) {
         /**
@@ -625,6 +639,7 @@ export class WorkspaceController {
          * :return: Group headings and Skill cards in display order.
          */
         const ordered = [...skills].map(skill => {
+            if (skill.withdrawn) return {skill, domain: "Withdrawn", category: null};
             const groups = [...skill.groups].sort();
             const path = groups.find(group => group.includes("/")) || groups[0] || "~";
             const [domain, category = "~"] = path.split("/");
@@ -634,15 +649,16 @@ export class WorkspaceController {
                 category: this.#skillGroupLabel(category, "General"),
             };
         }).sort((left, right) =>
+            Number(Boolean(left.skill.withdrawn)) - Number(Boolean(right.skill.withdrawn)) ||
             left.domain.localeCompare(right.domain, "en-GB") ||
-            left.category.localeCompare(right.category, "en-GB") ||
+            (left.category || "").localeCompare(right.category || "", "en-GB") ||
             left.skill.display_name.localeCompare(right.skill.display_name, "en-GB") ||
             left.skill.skill_id.localeCompare(right.skill.skill_id, "en-GB"));
         const items = [];
         let currentDomain;
         let currentCategory;
         for (const {skill, domain, category} of ordered) {
-            if (domain !== currentDomain) {
+            if (domain !== currentDomain || (skill.withdrawn && currentCategory !== null)) {
                 items.push(this.#element("H3", {className: "selected-domain", children: domain}));
                 currentDomain = domain;
                 currentCategory = null;
@@ -655,7 +671,10 @@ export class WorkspaceController {
                 className: "selected-item",
                 key: skill.skill_id,
                 children: [
-                    this.#skillDetails(skill),
+                    skill.withdrawn ? this.#element("Div", {children: [
+                        this.#element("Strong", {className: "withdrawn-skill-name", children: skill.display_name}),
+                        this.#element("P", {className: "skill-description", children: "Withdrawn. This Skill will not be used in new Goals."}),
+                    ]}) : this.#skillDetails(skill),
                     ...(editable ? [this.#element("Button", {
                         id: "skill-remove-" + skill.skill_id, type: "button", className: "btn btn-link",
                         "aria-label": "Remove " + skill.display_name, children: "×",
@@ -749,8 +768,8 @@ export class WorkspaceController {
             this.#renderSkills();
             const editor = this.#skillEditor;
             editor.version = workspace.version;
-            editor.savedSkills = workspace.skills;
-            editor.selected = new Map(workspace.skills.map(skill => [skill.skill_id, skill]));
+            editor.savedSkills = this.#workspaceSkillSelection(workspace);
+            editor.selected = new Map(editor.savedSkills.map(skill => [skill.skill_id, skill]));
             editor.saved = new Set(editor.selected.keys());
             this.#renderSkillBrowser();
             this.#renderCurrentSkills();
@@ -776,10 +795,16 @@ export class WorkspaceController {
             this.#renderSkills();
             const editor = this.#skillEditor;
             editor.version = workspace.version;
-            editor.savedSkills = workspace.skills;
-            editor.saved = new Set(workspace.skills.map(skill => skill.skill_id));
+            editor.savedSkills = this.#workspaceSkillSelection(workspace);
+            const savedById = new Map(editor.savedSkills.map(skill => [skill.skill_id, skill]));
+            editor.saved = new Set(savedById.keys());
+            for (const [id, skill] of editor.selected) {
+                const latest = savedById.get(id);
+                if (latest) editor.selected.set(id, latest);
+                else if (skill.withdrawn) editor.selected.delete(id);
+            }
             this.#renderCurrentSkills();
-            const saved = workspace.skills.map(skill => skill.display_name).join(", ") || "None";
+            const saved = editor.savedSkills.map(skill => skill.display_name + (skill.withdrawn ? " (withdrawn)" : "")).join(", ") || "None";
             const message = workspace.version === null
                 ? "This workspace is no longer available. Cancel and contact your administrator."
                 : `Skills changed elsewhere. Currently saved: ${saved}. Your draft is still selected. Review it before saving again.`;

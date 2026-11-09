@@ -155,6 +155,9 @@ catalogue path and listed once. The Chat Skills panel starts collapsed. Open
 the **Skills** tab to browse by domain and function or search the published
 catalogue. Results load from the backend in pages. **Current Skills** tracks
 your draft as you browse, and switching to Chat preserves both drafts.
+Saved Skills that disappear from the published catalogue are marked
+**Withdrawn** in **Current Skills**. They are excluded from the available
+count and from new Goals. Remove them in the Skills Marketplace and save.
 **Save Skills** replaces the saved selection, including an empty selection.
 Changes apply to the next Goal. If another tab or an administrator saves first,
 the Skills tab shows the latest saved Skills and keeps your draft for review.

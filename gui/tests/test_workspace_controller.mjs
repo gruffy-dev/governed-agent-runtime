@@ -3,7 +3,7 @@ import test from "node:test";
 import {WorkspaceController} from "../src/mosaic_gui/assets/workspace_controller.mjs";
 
 class TestWorkspaceController {
-    static setup() {
+    static setup(initialState = {}) {
         const originals = Object.fromEntries(["document", "window", "fetch", "requestAnimationFrame", "setInterval", "clearInterval", "setTimeout", "clearTimeout", "performance"].map(key => [key, globalThis[key]]));
         const elements = new Map();
         const listeners = new Map();
@@ -20,7 +20,7 @@ class TestWorkspaceController {
         globalThis.window = {addEventListener() {}, confirm: () => true, dash_clientside: {set_props: (id, props) => Object.assign(element(id), props)}};
         globalThis.requestAnimationFrame = callback => callback();
         const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: []};
-        const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], catalogue: [], version: 1, now: 0};
+        const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], catalogue: [], version: 1, now: 0, ...initialState};
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
         globalThis.clearInterval = id => timers.delete(id);
@@ -31,7 +31,7 @@ class TestWorkspaceController {
             const path = new URL(url).pathname;
             const failure = () => Response.json({detail: "private synthetic diagnostic"}, {status: state.failureStatus, headers: state.correlationId ? {"X-Correlation-ID": state.correlationId} : {}});
             if (path === "/api/v1/auth/token") return state.failSignIn ? failure() : new Response(null, {status: 204});
-            if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: state.skills, version: state.version});
+            if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: state.skills, withdrawn_skill_ids: state.withdrawn, version: state.version});
             if (path === "/api/v1/skills/catalogue") {
                 const params = new URL(url).searchParams;
                 const query = params.get("q");
@@ -45,7 +45,8 @@ class TestWorkspaceController {
                 const body = JSON.parse(options.body);
                 if (body.expected_version !== state.version) return Response.json({}, {status: 409});
                 state.skills = state.catalogue.filter(skill => body.skill_ids.includes(skill.skill_id));
-                return Response.json({user_id: "synthetic-user", skills: state.skills, version: ++state.version});
+                state.withdrawn = state.withdrawn?.filter(id => body.skill_ids.includes(id));
+                return Response.json({user_id: "synthetic-user", skills: state.skills, withdrawn_skill_ids: state.withdrawn, version: ++state.version});
             }
             if (path === "/api/v1/conversations" && options.method === "POST") {
                 if (state.failCreation) return failure();
@@ -76,6 +77,32 @@ class TestWorkspaceController {
         for (let index = 0; index < 12; ++index) await new Promise(resolve => setImmediate(resolve));
     }
     static run() {
+        test("Withdrawn Skills appear only in Current Skills and can be removed", async () => {
+            const fixture = this.setup({withdrawn: ["retired-skill"]});
+            const {state, element, click, input, requests} = fixture;
+            try {
+                state.catalogue = [{skill_id: "alpha", display_name: "Alpha", description: "Synthetic Skill", groups: []}];
+                await this.settle();
+                assert.equal(element("skill-count").children, "0 assigned Skills");
+                assert.match(JSON.stringify(element("skills-list").children), /will not be used in new Goals/);
+                click("show-skill-browser");
+                await this.settle();
+                assert.equal(element("skill-selection-count").children, "0 selected");
+                assert.match(JSON.stringify(element("current-skills").children), /Remove Retired skill/);
+                input("skill-search", "alpha");
+                await this.settle();
+                assert.doesNotMatch(JSON.stringify(element("skill-browser-columns").children), /Retired skill/);
+                click("skill-option-0");
+                click("save-skills");
+                await this.settle();
+                assert.deepEqual(JSON.parse(requests.find(request => request.url.endsWith("/workspace/skills")).options.body).skill_ids, ["retired-skill", "alpha"]);
+                click("skill-remove-retired-skill");
+                click("save-skills");
+                await this.settle();
+                assert.deepEqual(state.withdrawn, []);
+                assert.equal(element("skill-selection-count").children, "1 selected");
+            } finally {fixture.restore();}
+        });
         test("Skill search retains hidden selections and save can clear the workspace", async () => {
             const fixture = this.setup();
             const {state, element, click, input, requests} = fixture;

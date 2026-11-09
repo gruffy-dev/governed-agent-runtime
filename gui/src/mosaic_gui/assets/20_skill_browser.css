@@ -26,6 +26,7 @@
 .selected-item { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; padding:8px; background:#fff; border:1px solid var(--mosaic-border); border-radius:6px; }
 .selected-item + .selected-item { margin-top:6px; }
 .selected-item .btn { padding:0 4px; font-size:12px; line-height:1.4; }
+.withdrawn-skill-name { color:var(--mosaic-text); font-size:12px; overflow-wrap:anywhere; }
 .browser-column h2 { margin:0; padding:10px 14px; background:#fafbfe; border-bottom:1px solid #edf0f7; color:var(--mosaic-text-secondary); font-size:11px; font-weight:700; }
 .browser-list { height:clamp(240px, 44dvh, 480px); overflow:auto; padding:6px; }
 .browser-row { background:none; border:0; text-align:left; color:var(--mosaic-text); font-size:12px; }
