@@ -28,7 +28,7 @@
 .selected-item .btn { padding:0 4px; font-size:12px; line-height:1.4; }
 .withdrawn-panel {
   margin-top:12px;
-  padding:9px 10px 3px;
+  padding:9px 10px;
   color:#754709;
   background:#fff5df;
   border:1px solid #e4bc77;
@@ -39,13 +39,13 @@
 .withdrawn-heading { margin:0 0 4px; font-size:12px; font-weight:700; }
 .withdrawn-note { margin:0 0 6px; font-size:12px; line-height:1.45; }
 .withdrawn-panel .withdrawn-item {
-  margin:0;
-  padding:6px 0;
-  background:transparent;
-  border:0;
-  border-top:1px solid #e4bc77;
-  border-radius:0;
+  margin:5px 0 0;
+  padding:6px 8px;
+  color:var(--mosaic-text);
+  background:#fff;
+  border-color:#e4bc77;
 }
+.withdrawn-note + .withdrawn-item { margin-top:9px; }
 .withdrawn-skill-name { font-size:12px; overflow-wrap:anywhere; }
 .browser-column h2 { margin:0; padding:10px 14px; background:#fafbfe; border-bottom:1px solid #edf0f7; color:var(--mosaic-text-secondary); font-size:11px; font-weight:700; }
 .browser-list { height:clamp(240px, 44dvh, 480px); overflow:auto; padding:6px; }
