@@ -655,27 +655,20 @@ export class WorkspaceController {
             left.skill.display_name.localeCompare(right.skill.display_name, "en-GB") ||
             left.skill.skill_id.localeCompare(right.skill.skill_id, "en-GB"));
         const items = [];
+        const withdrawnItems = [];
         let currentDomain;
         let currentCategory;
         for (const {skill, domain, category} of ordered) {
-            if (domain !== currentDomain || (skill.withdrawn && currentCategory !== null)) {
-                items.push(this.#element("H3", {
-                    className: skill.withdrawn ? "selected-domain withdrawn-heading" : "selected-domain",
-                    children: domain,
-                }));
-                if (skill.withdrawn) items.push(this.#element("P", {
-                    className: "withdrawn-note",
-                    children: "These Skills have been withdrawn from the published catalogue and will not be used in new Goals." +
-                        (editable ? " Remove them and click Save Skills to update your workspace." : ""),
-                }));
+            if (!skill.withdrawn && domain !== currentDomain) {
+                items.push(this.#element("H3", {className: "selected-domain", children: domain}));
                 currentDomain = domain;
                 currentCategory = null;
             }
-            if (category !== currentCategory) {
+            if (!skill.withdrawn && category !== currentCategory) {
                 items.push(this.#element("H4", {className: "selected-category", children: category}));
                 currentCategory = category;
             }
-            items.push(this.#element("Div", {
+            (skill.withdrawn ? withdrawnItems : items).push(this.#element("Div", {
                 className: skill.withdrawn ? "selected-item withdrawn-item" : "selected-item",
                 key: skill.skill_id,
                 children: [
@@ -689,6 +682,21 @@ export class WorkspaceController {
                 ],
             }));
         }
+        if (withdrawnItems.length) items.push(this.#element("Section", {
+            className: "withdrawn-panel",
+            children: [
+                this.#element("H3", {className: "withdrawn-heading", children: "Withdrawn"}),
+                this.#element("P", {
+                    className: "withdrawn-note",
+                    children: "These Skills are no longer in the catalogue and won’t be used in new Goals.",
+                }),
+                ...(editable ? [this.#element("P", {
+                    className: "withdrawn-note",
+                    children: ["Remove them and select ", this.#element("Strong", {children: "Save Skills"}), "."],
+                })] : []),
+                ...withdrawnItems,
+            ],
+        }));
         return items;
     }
     #hasSkillChanges() {

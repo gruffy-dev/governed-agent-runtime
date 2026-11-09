@@ -84,12 +84,15 @@ class TestWorkspaceController {
                 state.catalogue = [{skill_id: "alpha", display_name: "Alpha", description: "Synthetic Skill", groups: []}];
                 await this.settle();
                 assert.equal(element("skill-count").children, "0 assigned Skills");
-                const warningCount = panel => element(panel).children.filter(item => item.props.className === "withdrawn-note").length;
-                assert.equal(warningCount("skills-list"), 1);
+                const withdrawnPanel = panel => element(panel).children.find(item => item.props.className === "withdrawn-panel");
+                assert.equal(withdrawnPanel("skills-list").props.children.filter(item => item.type === "P").length, 1);
                 click("show-skill-browser");
                 await this.settle();
                 assert.equal(element("skill-selection-count").children, "0 selected");
-                assert.equal(warningCount("current-skills"), 1);
+                const marketplace = withdrawnPanel("current-skills").props.children;
+                assert.equal(marketplace.filter(item => item.type === "P").length, 2);
+                assert.equal(marketplace.filter(item => item.props.className === "selected-item withdrawn-item").length, 2);
+                assert.match(JSON.stringify(marketplace[2]), /Save Skills/);
                 assert.match(JSON.stringify(element("current-skills").children), /Remove Retired skill/);
                 input("skill-search", "alpha");
                 await this.settle();
