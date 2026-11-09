@@ -78,16 +78,18 @@ class TestWorkspaceController {
     }
     static run() {
         test("Withdrawn Skills appear only in Current Skills and can be removed", async () => {
-            const fixture = this.setup({withdrawn: ["retired-skill"]});
+            const fixture = this.setup({withdrawn: ["retired-skill", "another-retired-skill"]});
             const {state, element, click, input, requests} = fixture;
             try {
                 state.catalogue = [{skill_id: "alpha", display_name: "Alpha", description: "Synthetic Skill", groups: []}];
                 await this.settle();
                 assert.equal(element("skill-count").children, "0 assigned Skills");
-                assert.match(JSON.stringify(element("skills-list").children), /will not be used in new Goals/);
+                const warningCount = panel => element(panel).children.filter(item => item.props.className === "withdrawn-note").length;
+                assert.equal(warningCount("skills-list"), 1);
                 click("show-skill-browser");
                 await this.settle();
                 assert.equal(element("skill-selection-count").children, "0 selected");
+                assert.equal(warningCount("current-skills"), 1);
                 assert.match(JSON.stringify(element("current-skills").children), /Remove Retired skill/);
                 input("skill-search", "alpha");
                 await this.settle();
@@ -95,8 +97,9 @@ class TestWorkspaceController {
                 click("skill-option-0");
                 click("save-skills");
                 await this.settle();
-                assert.deepEqual(JSON.parse(requests.find(request => request.url.endsWith("/workspace/skills")).options.body).skill_ids, ["retired-skill", "alpha"]);
+                assert.deepEqual(JSON.parse(requests.find(request => request.url.endsWith("/workspace/skills")).options.body).skill_ids, ["retired-skill", "another-retired-skill", "alpha"]);
                 click("skill-remove-retired-skill");
+                click("skill-remove-another-retired-skill");
                 click("save-skills");
                 await this.settle();
                 assert.deepEqual(state.withdrawn, []);

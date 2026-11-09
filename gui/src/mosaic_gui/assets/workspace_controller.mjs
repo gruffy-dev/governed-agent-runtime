@@ -659,7 +659,16 @@ export class WorkspaceController {
         let currentCategory;
         for (const {skill, domain, category} of ordered) {
             if (domain !== currentDomain || (skill.withdrawn && currentCategory !== null)) {
-                items.push(this.#element("H3", {className: "selected-domain", children: domain}));
+                items.push(this.#element("H3", {
+                    className: skill.withdrawn ? "selected-domain withdrawn-heading" : "selected-domain",
+                    children: domain,
+                }));
+                if (skill.withdrawn) items.push(this.#element("P", {
+                    className: "withdrawn-note",
+                    children: editable
+                        ? "These Skills will not be used in new Goals. Remove them and click Save Skills to update your workspace."
+                        : "These Skills will not be used in new Goals.",
+                }));
                 currentDomain = domain;
                 currentCategory = null;
             }
@@ -668,13 +677,12 @@ export class WorkspaceController {
                 currentCategory = category;
             }
             items.push(this.#element("Div", {
-                className: "selected-item",
+                className: skill.withdrawn ? "selected-item withdrawn-item" : "selected-item",
                 key: skill.skill_id,
                 children: [
-                    skill.withdrawn ? this.#element("Div", {children: [
-                        this.#element("Strong", {className: "withdrawn-skill-name", children: skill.display_name}),
-                        this.#element("P", {className: "skill-description", children: "Withdrawn. This Skill will not be used in new Goals."}),
-                    ]}) : this.#skillDetails(skill),
+                    skill.withdrawn ? this.#element("Strong", {
+                        className: "withdrawn-skill-name", children: skill.display_name,
+                    }) : this.#skillDetails(skill),
                     ...(editable ? [this.#element("Button", {
                         id: "skill-remove-" + skill.skill_id, type: "button", className: "btn btn-link",
                         "aria-label": "Remove " + skill.display_name, children: "×",
