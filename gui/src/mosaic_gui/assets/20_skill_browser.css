@@ -20,10 +20,12 @@
 .selected-panel.browser-column { border-left:1px solid var(--mosaic-border); background:var(--mosaic-soft); }
 .browser-column.selected-panel h2 { background:var(--mosaic-primary); color:#fff; }
 .selected-panel .browser-list { padding:8px; }
+.selected-domain { margin:12px 2px 5px; color:var(--mosaic-strong); font-size:12px; font-weight:700; }
+.selected-domain:first-child { margin-top:2px; }
+.selected-category { margin:7px 2px 5px; color:#52607f; font-size:11px; font-weight:650; }
 .selected-item { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; padding:8px; background:#fff; border:1px solid var(--mosaic-border); border-radius:6px; }
 .selected-item + .selected-item { margin-top:6px; }
 .selected-item strong { display:block; color:#354260; font-size:12px; }
-.selected-item small { display:block; margin-top:3px; color:#596783; font-size:11px; }
 .selected-item .btn { padding:0 4px; font-size:12px; line-height:1.4; }
 .browser-column h2 { margin:0; padding:10px 14px; background:#fafbfe; border-bottom:1px solid #edf0f7; color:#52607f; font-size:11px; font-weight:700; }
 .browser-list { height:clamp(240px, 44dvh, 480px); overflow:auto; padding:6px; }

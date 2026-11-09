@@ -79,8 +79,10 @@ class TestWorkspaceController {
         test("Skill search retains hidden selections and save can clear the workspace", async () => {
             const fixture = this.setup();
             const {state, element, click, input, requests} = fixture;
-            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example"]};
-            const beta = {skill_id: "beta", display_name: "Beta", description: "Second Skill", groups: ["example"]};
+            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example", "example/z-function"]};
+            const beta = {skill_id: "beta-skill", display_name: "Beta", description: "Second Skill", groups: ["example", "example/a-function"]};
+            const currentSkills = () => element("current-skills").children.map(item =>
+                item.type === "Div" ? item.props.children[0].props.children : item.props.children);
             try {
                 state.catalogue = [alpha, beta];
                 state.skills = [alpha];
@@ -101,22 +103,26 @@ class TestWorkspaceController {
                 assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?q=beta")));
                 click("skill-option-0");
                 assert.equal(element("skill-selection-count").children, "2 selected");
+                const grouped = ["Example", "A function", "Beta", "Z function", "Alpha"];
+                assert.deepEqual(currentSkills(), grouped);
                 click("save-skills");
                 await this.settle();
+                assert.deepEqual(currentSkills(), grouped);
                 assert.equal(element("skill-save-status").children, "Skills saved");
                 assert.equal(element("skill-count").children, "2 assigned Skills");
-                click("skill-remove-0");
-                click("skill-remove-0");
+                click("skill-remove-beta-skill");
+                assert.deepEqual(currentSkills(), ["Example", "Z function", "Alpha"]);
+                click("skill-remove-alpha");
                 click("cancel-skills");
                 assert.equal(element("skill-selection-count").children, "2 selected");
-                click("skill-remove-0");
-                click("skill-remove-0");
+                click("skill-remove-beta-skill");
+                click("skill-remove-alpha");
                 click("save-skills");
                 await this.settle();
                 assert.equal(element("skill-count").children, "0 assigned Skills");
                 const saves = requests.filter(request => request.url.endsWith("/workspace/skills"));
                 assert.deepEqual(saves.map(request => JSON.parse(request.options.body)), [
-                    {expected_version: 1, skill_ids: ["alpha", "beta"]},
+                    {expected_version: 1, skill_ids: ["alpha", "beta-skill"]},
                     {expected_version: 2, skill_ids: []},
                 ]);
             } finally {fixture.restore();}

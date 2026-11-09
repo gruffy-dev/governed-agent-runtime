@@ -608,19 +608,45 @@ export class WorkspaceController {
          * Update the selection panel and indicate changes that have yet to be saved.
          */
         const editor = this.#skillEditor;
-        const items = [...editor.selected.values()].map((skill, index) => this.#element("Div", {
-            className: "selected-item",
-            children: [
-                this.#element("Div", {children: [
+        const ordered = [...editor.selected.values()].map(skill => {
+            const groups = [...skill.groups].sort();
+            const path = groups.find(group => group.includes("/")) || groups[0] || "~";
+            const [domain, category = "~"] = path.split("/");
+            return {
+                skill,
+                domain: this.#skillGroupLabel(domain, "Ungrouped"),
+                category: this.#skillGroupLabel(category, "General"),
+            };
+        }).sort((left, right) =>
+            left.domain.localeCompare(right.domain, "en-GB") ||
+            left.category.localeCompare(right.category, "en-GB") ||
+            left.skill.display_name.localeCompare(right.skill.display_name, "en-GB") ||
+            left.skill.skill_id.localeCompare(right.skill.skill_id, "en-GB"));
+        const items = [];
+        let currentDomain;
+        let currentCategory;
+        for (const {skill, domain, category} of ordered) {
+            if (domain !== currentDomain) {
+                items.push(this.#element("H3", {className: "selected-domain", children: domain}));
+                currentDomain = domain;
+                currentCategory = null;
+            }
+            if (category !== currentCategory) {
+                items.push(this.#element("H4", {className: "selected-category", children: category}));
+                currentCategory = category;
+            }
+            items.push(this.#element("Div", {
+                className: "selected-item",
+                key: skill.skill_id,
+                children: [
                     this.#element("Strong", {children: skill.display_name}),
-                    this.#element("Small", {children: (skill.groups.find(group => group.includes("/")) || skill.groups[0] || "Ungrouped").replaceAll("/", " › ").replaceAll("-", " ")}),
-                ]}),
-                this.#element("Button", {
-                    id: "skill-remove-" + index, type: "button", className: "btn btn-link",
-                    "aria-label": "Remove " + skill.display_name, children: "×",
-                }),
-            ],
-        }));
+                    this.#element("Button", {
+                        id: "skill-remove-" + skill.skill_id, type: "button", className: "btn btn-link",
+                        "aria-label": "Remove " + skill.display_name, children: "×",
+                    }),
+                ],
+            }));
+        }
         this.#props("current-skills", {children: items.length ? items : "No Skills selected."});
         this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
         this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
@@ -666,7 +692,9 @@ export class WorkspaceController {
             this.#loadSkillPage(editor.level);
         } else if (!this.#busy && (action === "option" || action === "remove")) {
             const page = editor.pages[editor.query ? "search" : "skills"];
-            const skill = action === "remove" ? [...editor.selected.values()][Number(level)] : page?.items[Number(level)];
+            const skill = action === "remove"
+                ? editor.selected.get(id.slice("skill-remove-".length))
+                : page?.items[Number(level)];
             if (!skill) return;
             if (editor.selected.has(skill.skill_id)) editor.selected.delete(skill.skill_id);
             else editor.selected.set(skill.skill_id, skill);
