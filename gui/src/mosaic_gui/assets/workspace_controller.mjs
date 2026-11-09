@@ -418,7 +418,7 @@ export class WorkspaceController {
          * :param skills: Whether to show the Skill browser.
          */
         this.#props("workspace-screen", {style: {display: skills ? "none" : "flex"}});
-        this.#props("skill-editor", {style: {display: skills ? "block" : "none"}});
+        this.#props("skill-editor", {style: {display: skills ? "flex" : "none"}});
         this.#props("show-chat", {"aria-current": skills ? null : "page"});
         this.#props("show-skill-browser", {"aria-current": skills ? "page" : null});
         if (skills && !this.#skillEditor) this.#openSkillEditor();
@@ -550,15 +550,14 @@ export class WorkspaceController {
             const items = (page?.items || []).map((item, index) => {
                 if (typeof item !== "string") {
                     const path = item.groups.filter(group => group.includes("/")).join(" · ") || item.groups.join(" · ");
-                    return this.#element("Div", {className: "browser-skill", children: [
+                    return this.#element("Div", {className: "browser-skill", key: level + "-" + item.skill_id, children: [
                         this.#element("Button", {
                             id: "skill-option-" + index, type: "button", className: "skill-option",
-                            "aria-label": item.display_name,
+                            "aria-label": "Select " + item.display_name,
                             "aria-pressed": String(editor.selected.has(item.skill_id)),
-                            children: item.display_name,
                         }),
+                        this.#skillDetails(item, true),
                         ...(level === "search" && path ? [this.#element("Small", {children: path.replaceAll("/", " › ").replaceAll("-", " ")})] : []),
-                        this.#element("P", {className: "skill-description", children: item.description}),
                     ]});
                 }
                 const active = item === (level === "domains" ? editor.domain : editor.function);
@@ -601,6 +600,22 @@ export class WorkspaceController {
         this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
         this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
     }
+    #skillDetails(skill, open = false) {
+        /**
+         * Use the Skill name as the disclosure for its description.
+         * :param skill: Skill metadata to display.
+         * :param open: Whether the description is initially visible.
+         *
+         * :return: Native keyboard-accessible disclosure.
+         */
+        return this.#element("Details", {
+            className: "skill-details", open,
+            children: [
+                this.#element("Summary", {children: skill.display_name}),
+                this.#element("P", {className: "skill-description", children: skill.description}),
+            ],
+        });
+    }
     #selectedSkillCards(skills, editable = false) {
         /**
          * Render the same domain, function and Skill cards in both workspace views.
@@ -640,10 +655,7 @@ export class WorkspaceController {
                 className: "selected-item",
                 key: skill.skill_id,
                 children: [
-                    this.#element("Div", {children: [
-                        this.#element("Strong", {children: skill.display_name}),
-                        this.#element("P", {className: "skill-description", children: skill.description}),
-                    ]}),
+                    this.#skillDetails(skill),
                     ...(editable ? [this.#element("Button", {
                         id: "skill-remove-" + skill.skill_id, type: "button", className: "btn btn-link",
                         "aria-label": "Remove " + skill.display_name, children: "×",

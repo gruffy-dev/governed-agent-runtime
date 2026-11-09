@@ -89,7 +89,7 @@ class TestWorkspaceController {
                 await this.settle();
                 click("show-skill-browser");
                 await this.settle();
-                assert.equal(element("skill-editor").style.display, "block");
+                assert.equal(element("skill-editor").style.display, "flex");
                 assert.equal(requests.filter(request => request.url.includes("/skills/catalogue")).length, 1);
                 click("skill-more-domains");
                 await this.settle();
@@ -148,7 +148,7 @@ class TestWorkspaceController {
                 state.version = 2;
                 click("save-skills");
                 await this.settle();
-                assert.equal(element("skill-editor").style.display, "block");
+                assert.equal(element("skill-editor").style.display, "flex");
                 assert.match(element("skill-editor-alert").children, /Currently saved: Beta/);
                 assert.equal(element("skill-option-0")["aria-pressed"], "true");
                 assert.equal(requests.filter(request => request.url.endsWith("/workspace/skills")).length, 1);
