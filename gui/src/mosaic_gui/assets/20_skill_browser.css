@@ -102,7 +102,7 @@
   background:var(--mosaic-strong);
   content:"✓";
 }
-.skill-details { min-width:0; }
+.skill-details { --skill-label-indent:15px; min-width:0; }
 .skill-details summary {
   list-style:none;
   cursor:pointer;
@@ -116,7 +116,7 @@
   display:inline-block;
   width:6px;
   height:6px;
-  margin:0 7px 2px 2px;
+  margin:0 7px 2px -13px;
   border:solid currentColor;
   border-width:0 1px 1px 0;
   transform:rotate(-45deg);
@@ -126,6 +126,8 @@
 .browser-skill summary { padding:5px 0; }
 .browser-skill small { grid-column:2; color:var(--mosaic-text-support); font-size:11px; }
 .skill-description { margin:4px 0 0; color:var(--mosaic-text); font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.skill-details summary { padding-inline-start:var(--skill-label-indent); }
+.skill-details .skill-description { margin-inline-start:var(--skill-label-indent); }
 .skills-panel { background:var(--mosaic-soft); }
 .skills-panel .panel-heading { background:var(--mosaic-primary); padding:8px 12px; }
 .skills-panel .panel-heading h2, .skills-panel .panel-heading .btn { color:#fff; }

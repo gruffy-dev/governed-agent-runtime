@@ -437,7 +437,7 @@ class GuiLayout:
         """
         return html.Section(
             [
-                html.H1('Skills'),
+                html.H1('Skills Marketplace'),
                 html.P(
                     'Choose the Skills available to your workspace. Changes apply to the next Goal.',
                     className='browser-description',
