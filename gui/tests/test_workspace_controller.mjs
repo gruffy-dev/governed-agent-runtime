@@ -19,7 +19,7 @@ class TestWorkspaceController {
         globalThis.window = {addEventListener() {}, confirm: () => true, dash_clientside: {set_props: (id, props) => Object.assign(element(id), props)}};
         globalThis.requestAnimationFrame = callback => callback();
         const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: []};
-        const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], now: 0};
+        const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], catalogue: [], version: 1, now: 0};
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
         globalThis.clearInterval = id => timers.delete(id);
@@ -28,7 +28,14 @@ class TestWorkspaceController {
             const path = new URL(url).pathname;
             const failure = () => Response.json({detail: "private synthetic diagnostic"}, {status: state.failureStatus, headers: state.correlationId ? {"X-Correlation-ID": state.correlationId} : {}});
             if (path === "/api/v1/auth/token") return state.failSignIn ? failure() : new Response(null, {status: 204});
-            if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: state.skills});
+            if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: state.skills, version: state.version});
+            if (path === "/api/v1/skills") return Response.json(state.catalogue);
+            if (path === "/api/v1/workspace/skills") {
+                const body = JSON.parse(options.body);
+                if (body.expected_version !== state.version) return Response.json({}, {status: 409});
+                state.skills = state.catalogue.filter(skill => body.skill_ids.includes(skill.skill_id));
+                return Response.json({user_id: "synthetic-user", skills: state.skills, version: ++state.version});
+            }
             if (path === "/api/v1/conversations" && options.method === "POST") {
                 if (state.failCreation) return failure();
                 return Response.json(detail, {status: 201});
@@ -42,6 +49,7 @@ class TestWorkspaceController {
         return {element, requests, state, timers,
             tick: milliseconds => {state.now += milliseconds; for (const callback of timers.values()) callback();},
             click: id => listeners.get("click")({target: {closest: () => element(id)}}),
+            input: (id, value) => listeners.get("input")({target: Object.assign(element(id), {value})}),
             creations: () => requests.filter(request => new URL(request.url).pathname === "/api/v1/conversations" && request.options.method === "POST"),
             restore: () => {
                 for (const [key, value] of Object.entries(originals)) {
@@ -54,6 +62,65 @@ class TestWorkspaceController {
         for (let index = 0; index < 12; ++index) await new Promise(resolve => setImmediate(resolve));
     }
     static run() {
+        test("Skill search retains hidden selections and save can clear the workspace", async () => {
+            const fixture = this.setup();
+            const {state, element, click, input, requests} = fixture;
+            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example"]};
+            const beta = {skill_id: "beta", display_name: "Beta", description: "Second Skill", groups: ["example"]};
+            try {
+                state.catalogue = [alpha, beta];
+                state.skills = [alpha];
+                await this.settle();
+                click("manage-skills");
+                await this.settle();
+                assert.equal(element("skill-editor").is_open, true);
+                input("skill-search", "beta");
+                assert.deepEqual(element("skill-options").children.map(option => option.props.id), ["skill-option-1"]);
+                click("skill-option-1");
+                assert.equal(element("skill-selection-count").children, "2 selected");
+                click("save-skills");
+                await this.settle();
+                assert.equal(element("skill-editor").is_open, false);
+                assert.equal(element("skill-count").children, "2 assigned Skills");
+                click("manage-skills");
+                await this.settle();
+                click("skill-option-0");
+                click("skill-option-1");
+                click("save-skills");
+                await this.settle();
+                assert.equal(element("skill-count").children, "0 assigned Skills");
+                const saves = requests.filter(request => request.url.endsWith("/workspace/skills"));
+                assert.deepEqual(saves.map(request => JSON.parse(request.options.body)), [
+                    {expected_version: 1, skill_ids: ["alpha", "beta"]},
+                    {expected_version: 2, skill_ids: []},
+                ]);
+            } finally {fixture.restore();}
+        });
+        test("Skill conflicts show the saved selection and require a fresh click to retry", async () => {
+            const fixture = this.setup();
+            const {state, element, click, requests} = fixture;
+            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "", groups: []};
+            const beta = {skill_id: "beta", display_name: "Beta", description: "", groups: []};
+            try {
+                state.catalogue = [alpha, beta];
+                await this.settle();
+                click("manage-skills");
+                await this.settle();
+                click("skill-option-0");
+                state.skills = [beta];
+                state.version = 2;
+                click("save-skills");
+                await this.settle();
+                assert.equal(element("skill-editor").is_open, true);
+                assert.match(element("skill-editor-alert").children, /Currently saved: Beta/);
+                assert.equal(element("skill-option-0")["aria-pressed"], "true");
+                assert.equal(requests.filter(request => request.url.endsWith("/workspace/skills")).length, 1);
+                click("save-skills");
+                await this.settle();
+                assert.deepEqual(state.skills, [alpha]);
+                assert.equal(state.version, 3);
+            } finally {fixture.restore();}
+        });
         test("login, blank sends and New conversation do not create sessions; first send creates once", async () => {
             const fixture = this.setup();
             try {

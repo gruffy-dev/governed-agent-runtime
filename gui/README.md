@@ -151,7 +151,12 @@ is created on the first non-empty message, not on login, refresh or clicking
 New conversation. Existing empty conversations are retained; no history is deleted.
 History remains
 available in the sidebar. Skills are grouped by the most-specific available
-catalogue path, listed once, and are read-only. Descriptions expand on demand.
+catalogue path and listed once. Descriptions expand on demand. Open **Manage
+Skills** to search the published catalogue and choose your workspace Skills.
+**Save Skills** replaces the saved selection, including clearing it if you
+deselect every Skill. Changes apply to the next Goal. If another tab or an
+administrator saves first, the editor shows the latest saved Skills and keeps
+your draft for review before you save again.
 Both side panels collapse to matching icon-only controls with accessible names
 and tooltips; desktop separators support pointer and arrow-key
 resizing. Markdown supports headings, lists, tables and highlighted code blocks.

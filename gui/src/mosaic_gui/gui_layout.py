@@ -1,4 +1,5 @@
 import dash_bootstrap_components as dbc
+from dash import dcc
 from dash import html
 
 from .gui_configuration import GuiConfiguration
@@ -391,10 +392,11 @@ class GuiLayout:
                                         html.Div(
                                             [
                                                 html.Span(id='skill-count'),
-                                                dbc.Badge(
-                                                    'Read only',
-                                                    color='light',
-                                                    className='read-only-badge',
+                                                dbc.Button(
+                                                    'Manage Skills',
+                                                    id='manage-skills',
+                                                    color='outline-primary',
+                                                    size='sm',
                                                 ),
                                             ],
                                             className='skill-summary',
@@ -403,7 +405,7 @@ class GuiLayout:
                                             id='skills-list', className='skills-list'
                                         ),
                                         html.Div(
-                                            'Assignments are managed by your administrator. Updates apply to the next Goal.',
+                                            'Skill changes apply to the next Goal.',
                                             className='panel-footer',
                                         ),
                                     ],
@@ -417,6 +419,59 @@ class GuiLayout:
                         ),
                     ],
                     className='page-main',
+                ),
+                dbc.Modal(
+                    [
+                        dbc.ModalHeader(
+                            dbc.ModalTitle('Manage Skills'),
+                            close_button=False,
+                        ),
+                        dbc.ModalBody(
+                            [
+                                html.P(
+                                    'Choose the Skills to use in your workspace. Changes apply to the next Goal.',
+                                    className='text-muted',
+                                ),
+                                html.Label(
+                                    'Search Skills',
+                                    htmlFor='skill-search',
+                                    className='form-label',
+                                ),
+                                dcc.Input(
+                                    id='skill-search',
+                                    type='search',
+                                    value='',
+                                    className='form-control mb-3',
+                                ),
+                                dbc.Alert(
+                                    id='skill-editor-alert',
+                                    color='warning',
+                                    is_open=False,
+                                ),
+                                html.Div(id='skill-options', className='skill-options'),
+                            ],
+                        ),
+                        dbc.ModalFooter(
+                            [
+                                html.Span(
+                                    id='skill-selection-count',
+                                    className='me-auto text-muted',
+                                    role='status',
+                                ),
+                                dbc.Button(
+                                    'Cancel', id='cancel-skills', color='secondary'
+                                ),
+                                dbc.Button(
+                                    'Save Skills', id='save-skills', color='primary'
+                                ),
+                            ],
+                        ),
+                    ],
+                    id='skill-editor',
+                    is_open=False,
+                    backdrop='static',
+                    keyboard=False,
+                    scrollable=True,
                 ),
             ],
             id='mosaic-root',

@@ -10,6 +10,7 @@ export class WorkspaceController {
     #streamController = null;
     #operation = null;
     #workspace = null;
+    #skillEditor = null;
     #conversation = null;
     #conversations = [];
     #messages = [];
@@ -27,6 +28,12 @@ export class WorkspaceController {
         input.setAttribute("aria-describedby", "sign-in-error");
         document.getElementById("token-input-slot").append(input);
         document.addEventListener("click", event => this.#click(event));
+        document.addEventListener("input", event => {
+            if (event.target.id === "skill-search" && this.#skillEditor) {
+                this.#skillEditor.query = event.target.value;
+                this.#renderSkillOptions();
+            }
+        });
         document.addEventListener("keydown", event => this.#key(event));
         document.getElementById("sign-in-form").addEventListener("submit", event => {event.preventDefault(); this.#signIn();});
         for (const side of ["history", "skills"]) this.#resize(side);
@@ -155,6 +162,7 @@ export class WorkspaceController {
         this.#clearActivity();
         this.#signedIn = false;
         this.#workspace = this.#conversation = null;
+        this.#closeSkillEditor();
         this.#conversations = this.#messages = [];
         this.#streamController = this.#operation = null;
         document.getElementById("pilot-token").value = "";
@@ -395,7 +403,7 @@ export class WorkspaceController {
          */
         const skills = this.#workspace?.skills || [];
         this.#props("skill-count", {children: `${skills.length} assigned ${skills.length === 1 ? "Skill" : "Skills"}`});
-        if (!skills.length) {this.#props("skills-list", {children: this.#element("P", {className: "empty-skills", children: "No Skills are assigned to your workspace. Contact your administrator to add them."})}); return;}
+        if (!skills.length) {this.#props("skills-list", {children: this.#element("P", {className: "empty-skills", children: "No Skills are selected. Use Manage Skills to choose them."})}); return;}
         const groups = new Map();
         for (const skill of skills) {
             const group = [...skill.groups].sort((left, right) => right.split("/").length - left.split("/").length || left.localeCompare(right))[0] || "Assigned Skills";
@@ -409,6 +417,143 @@ export class WorkspaceController {
         }, "dash_bootstrap_components"));
         this.#props("skills-list", {children: this.#element("Accordion", {children: items, always_open: true, start_collapsed: false, active_item: items.map(item => item.props.item_id)}, "dash_bootstrap_components")});
     }
+    async #openSkillEditor() {
+        /**
+         * Load published Skills and the current saved selection before editing.
+         */
+        if (this.#busy || this.#streamController || !this.#signedIn || this.#skillEditor) return;
+        const epoch = this.#epoch;
+        this.#busy = true;
+        this.#controls();
+        try {
+            const [catalogue, workspace] = await Promise.all([
+                this.#client.request("/api/v1/skills"),
+                this.#client.request("/api/v1/workspace"),
+            ]);
+            if (epoch !== this.#epoch) return;
+            this.#workspace = workspace;
+            this.#renderSkills();
+            if (workspace.version === null) {
+                this.#failure(new Error("This account has no workspace to edit. Contact your administrator."));
+                return;
+            }
+            this.#skillEditor = {
+                catalogue,
+                selected: new Set(workspace.skills.map(skill => skill.skill_id)),
+                query: "",
+            };
+            this.#props("skill-search", {value: ""});
+            this.#props("skill-editor-alert", {is_open: false, children: ""});
+            this.#renderSkillOptions();
+            this.#props("skill-editor", {is_open: true});
+        } catch (error) {
+            if (epoch === this.#epoch) this.#failure(error);
+        } finally {
+            if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
+        }
+    }
+    #renderSkillOptions() {
+        /**
+         * Filter the catalogue without dropping selections hidden by the search.
+         */
+        const {catalogue, selected, query} = this.#skillEditor;
+        const search = query.trim().toLowerCase();
+        const options = catalogue.flatMap((skill, index) => {
+            const group = skill.groups.join(" · ").replaceAll("-", " ");
+            const text = [skill.display_name, skill.skill_id, skill.description, group].join(" ").toLowerCase();
+            if (!text.includes(search)) return [];
+            return [this.#element("Button", {
+                id: "skill-option-" + index, type: "button", className: "skill-option",
+                "aria-pressed": String(selected.has(skill.skill_id)),
+                children: [
+                    this.#element("Strong", {children: skill.display_name}),
+                    this.#element("Small", {children: group}),
+                    this.#element("Span", {children: skill.description}),
+                ],
+            })];
+        });
+        this.#props("skill-options", {children: options.length ? options : "No matching Skills."});
+        this.#props("skill-selection-count", {children: `${selected.size} selected`});
+    }
+    #toggleSkill(button) {
+        /**
+         * Update one draft selection without moving keyboard focus.
+         * :param button: Catalogue option that the user activated.
+         */
+        if (this.#busy || !this.#skillEditor) return;
+        const {catalogue, selected} = this.#skillEditor;
+        const skill = catalogue[Number(button.id.slice("skill-option-".length))];
+        if (!skill) return;
+        if (selected.has(skill.skill_id)) selected.delete(skill.skill_id);
+        else selected.add(skill.skill_id);
+        this.#props(button.id, {"aria-pressed": String(selected.has(skill.skill_id))});
+        this.#props("skill-selection-count", {children: `${selected.size} selected`});
+    }
+    async #saveSkillSelection() {
+        /**
+         * Save the whole draft once and let the user review conflicts before retrying.
+         */
+        if (this.#busy || !this.#skillEditor || this.#workspace.version === null) return;
+        const epoch = this.#epoch;
+        this.#busy = true;
+        this.#controls();
+        this.#props("skill-editor-alert", {is_open: false});
+        try {
+            const workspace = await this.#client.request("/api/v1/workspace/skills", {
+                method: "POST",
+                body: {expected_version: this.#workspace.version, skill_ids: [...this.#skillEditor.selected]},
+            });
+            if (epoch !== this.#epoch) return;
+            this.#workspace = workspace;
+            this.#renderSkills();
+            this.#closeSkillEditor();
+        } catch (error) {
+            if (epoch !== this.#epoch) return;
+            if (error.status === 409) await this.#reviewSkillConflict(epoch, error);
+            else this.#skillEditorFailure(error);
+        } finally {
+            if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
+        }
+    }
+    async #reviewSkillConflict(epoch, error) {
+        /**
+         * Show the latest saved selection and retain the draft for an explicit retry.
+         * :param epoch: Sign-in generation that started the save.
+         * :param error: Rejected save with safe correlation metadata.
+         */
+        try {
+            const workspace = await this.#client.request("/api/v1/workspace");
+            if (epoch !== this.#epoch) return;
+            this.#workspace = workspace;
+            this.#renderSkills();
+            const saved = workspace.skills.map(skill => skill.display_name).join(", ") || "None";
+            const message = workspace.version === null
+                ? "This workspace is no longer available. Cancel and contact your administrator."
+                : `Skills changed elsewhere. Currently saved: ${saved}. Your draft is still selected. Review it before saving again.`;
+            this.#skillEditorFailure({message, correlationId: error.correlationId});
+        } catch (refreshError) {
+            if (epoch === this.#epoch) this.#skillEditorFailure(refreshError);
+        }
+    }
+    #skillEditorFailure(error) {
+        /**
+         * Show a safe error in the editor or return to sign-in on authentication loss.
+         * :param error: Safe client failure.
+         */
+        if (error.status === 401) this.#failure(error);
+        else this.#props("skill-editor-alert", {is_open: true, children: this.#errorMessage(error)});
+    }
+    #closeSkillEditor() {
+        /**
+         * Discard editor state and remove the draft from the interface.
+         */
+        this.#skillEditor = null;
+        this.#props("skill-editor", {is_open: false});
+        this.#props("skill-options", {children: ""});
+        this.#props("skill-search", {value: ""});
+        this.#props("skill-selection-count", {children: ""});
+        this.#props("skill-editor-alert", {is_open: false, children: ""});
+    }
     #controls() {
         /**
          * Prevent simultaneous sends or conversation switches while a stream is active.
@@ -416,6 +561,9 @@ export class WorkspaceController {
         const streaming = Boolean(this.#streamController);
         const blocked = this.#busy || streaming;
         this.#props("sign-in", {disabled: this.#busy});
+        this.#props("manage-skills", {disabled: blocked || !this.#signedIn});
+        this.#props("save-skills", {disabled: this.#busy || !this.#skillEditor || this.#workspace.version === null});
+        this.#props("cancel-skills", {disabled: this.#busy});
         this.#props("new-conversation", {disabled: blocked || !this.#signedIn});
         this.#props("send-message", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
         this.#props("message-input", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
@@ -462,6 +610,10 @@ export class WorkspaceController {
         else if (id === "new-conversation") this.#newConversation();
         else if (id === "send-message") this.#submit();
         else if (id === "stop-stream") this.#streamController?.abort();
+        else if (id === "manage-skills") this.#openSkillEditor();
+        else if (id === "save-skills") this.#saveSkillSelection();
+        else if (id === "cancel-skills" && !this.#busy) this.#closeSkillEditor();
+        else if (id.startsWith("skill-option-")) this.#toggleSkill(button);
         else if (id === "history-toggle" || id === "history-show") this.#toggle("history");
         else if (id === "skills-toggle" || id === "skills-show") this.#toggle("skills");
         else if (id.startsWith("conversation-")) this.#loadConversation(id.slice(13));
