@@ -181,13 +181,21 @@ class UserWorkspaceApi:
             response.headers['Cache-Control'] = 'no-store'
             snapshot = self._get_catalogue() if selection.skill_ids else None
             headers = {'Cache-Control': 'no-store'}
-            if snapshot is not None and not set(selection.skill_ids).issubset(
-                skill.name for skill in snapshot.skills
-            ):
-                raise HTTPException(400, 'Invalid Skill selection', headers=headers)
+            withdrawn = set(selection.skill_ids) - (
+                {skill.name for skill in snapshot.skills} if snapshot is not None else set()
+            )
             try:
                 with self._database.create_session() as session, session.begin():
-                    workspace = WorkspaceService(session).replace_skill_ids(
+                    service = WorkspaceService(session)
+                    if withdrawn:
+                        current = service.get_for_user(context.user_id)
+                        if current is None:
+                            raise ValueError('Workspace does not exist.')
+                        if current.version != selection.expected_version:
+                            raise StaleWorkspaceVersionError('Workspace version is stale.')
+                        if not withdrawn.issubset(current.skill_ids):
+                            raise HTTPException(400, 'Invalid Skill selection', headers=headers)
+                    workspace = service.replace_skill_ids(
                         context.user_id,
                         selection.expected_version,
                         selection.skill_ids,
@@ -207,10 +215,10 @@ class UserWorkspaceApi:
 
     def _get_workspace(self, context: TrustedRequestContext) -> UserWorkspaceSummary:
         """
-        Project only owned assignments that remain in the executable catalogue.
+        Project owned assignments and identify references absent from the catalogue.
 
         Missing or empty workspaces produce an empty list without importing the
-        agent. Unknown or withdrawn references and unrelated groups are omitted.
+        agent. Withdrawn references are reported separately from usable Skills.
         Instructions, schemas, capability declarations and provider data stay private.
 
         :param context: Validated owner; request parameters cannot override it.
@@ -244,13 +252,14 @@ class UserWorkspaceApi:
 
         :return: Safe workspace summary.
         """
+        selected = set(workspace.skill_ids) if workspace is not None else set()
+        skills = self._summarise_skills(snapshot, selected) if snapshot is not None else ()
         return UserWorkspaceSummary(
             user_id=user_id,
             workspace_id=None if workspace is None else UUID(workspace.workspace_id),
             version=None if workspace is None else workspace.version,
-            skills=()
-            if workspace is None or snapshot is None
-            else self._summarise_skills(snapshot, set(workspace.skill_ids)),
+            skills=skills,
+            withdrawn_skill_ids=tuple(sorted(selected - {skill.skill_id for skill in skills})),
         )
 
     def _summarise_skills(

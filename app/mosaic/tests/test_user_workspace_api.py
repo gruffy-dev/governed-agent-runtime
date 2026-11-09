@@ -102,7 +102,7 @@ class TestUserWorkspaceApi(unittest.TestCase):
             self.assertEqual(response.headers['cache-control'], 'no-store')
             body = response.json()
             self.assertEqual(
-                set(body), {'user_id', 'workspace_id', 'version', 'skills'}
+                set(body), {'user_id', 'workspace_id', 'version', 'skills', 'withdrawn_skill_ids'}
             )
             self.assertEqual(body['user_id'], user.user_id)
             self.assertEqual(body['workspace_id'], user.workspace_id)
@@ -122,7 +122,10 @@ class TestUserWorkspaceApi(unittest.TestCase):
             self.assertEqual(skill['kind'], 'procedural')
             self.assertNotIn('Private synthetic instruction.', response.text)
             self.assertNotIn(user.plaintext_token.get_secret_value(), response.text)
-            self.assertNotIn('withdrawn-skill', response.text)
+            self.assertEqual(
+                body['withdrawn_skill_ids'],
+                ['withdrawn-skill'] if user is self.user_a else [],
+            )
             expected_groups = (
                 ['synthetic-domain', 'synthetic-domain/first-function']
                 if expected == 'skill-a'
@@ -324,13 +327,36 @@ class TestUserWorkspaceApi(unittest.TestCase):
                 WorkspaceService(session).get_for_user(self.user_b.user_id).version, 2
             )
 
+    def test_withdrawn_skill_can_only_be_retained_or_removed_by_its_owner(self) -> None:
+        owner = {'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'}
+        other = {'Authorization': f'Bearer {self.user_b.plaintext_token.get_secret_value()}'}
+        route = '/api/v1/workspace/skills'
+        payload = {'expected_version': 2, 'skill_ids': ['skill-b', 'withdrawn-skill']}
+        self.assertEqual(self.client.post(route, headers=other, json=payload).status_code, 400)
+        self.assertEqual(
+            self.client.get('/api/v1/skills/catalogue', headers=owner, params={'q': 'withdrawn'}).json()['items'],
+            [],
+        )
+        retained = self.client.post(route, headers=owner, json=payload)
+        self.assertEqual(retained.status_code, 200)
+        self.assertEqual(retained.json()['withdrawn_skill_ids'], ['withdrawn-skill'])
+        payload['expected_version'] = 3
+        payload['skill_ids'] = ['skill-b']
+        removed = self.client.post(route, headers=owner, json=payload)
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(removed.json()['withdrawn_skill_ids'], [])
+        payload['skill_ids'].append('withdrawn-skill')
+        self.assertEqual(self.client.post(route, headers=owner, json=payload).status_code, 409)
+        payload['expected_version'] = 4
+        self.assertEqual(self.client.post(route, headers=owner, json=payload).status_code, 400)
+
     def test_invalid_and_stale_selections_preserve_the_latest_assignment(self) -> None:
         headers = {
             'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
         }
         route = '/api/v1/workspace/skills'
         for payload, status in (
-            ({'expected_version': 2, 'skill_ids': ['skill-b', 'withdrawn-skill']}, 400),
+            ({'expected_version': 2, 'skill_ids': ['skill-b', 'unknown-skill']}, 400),
             ({'expected_version': 2, 'skill_ids': ['skill-b', 'skill-b']}, 422),
             (
                 {

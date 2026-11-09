@@ -22,3 +22,7 @@ class UserWorkspaceSummary(BaseModel):
         default=(),
         description='Current assigned Skills present in the active catalogue; not an active Goal snapshot.',
     )
+    withdrawn_skill_ids: tuple[str, ...] = Field(
+        default=(),
+        description='Saved atomic references absent from the active catalogue.',
+    )

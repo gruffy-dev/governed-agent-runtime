@@ -686,8 +686,9 @@ The authenticated, read-only `GET /api/v1/workspace` endpoint returns the
 signed-in user, workspace identifier and assignment version, plus current
 assigned Skill labels, descriptions, kinds and catalogue group paths. It
 accepts no ownership selector and returns `Cache-Control: no-store`.
-Missing or empty workspaces return an empty Skill list; withdrawn catalogue
-references are omitted. Executable instructions, output schemas, capability
+Missing or empty workspaces return an empty Skill list. Saved IDs absent from
+the active catalogue are returned to their owner in `withdrawn_skill_ids`.
+Executable instructions, output schemas, capability
 declarations and credentials are never included.
 
 This endpoint describes current workspace assignments, not the immutable Skill
@@ -702,7 +703,9 @@ to request another page.
 `POST /api/v1/workspace/skills` replaces the authenticated user's selection and
 returns the saved workspace summary. Send `expected_version` from the workspace
 read and `skill_ids` as the complete list of selected IDs. An empty list clears
-the selection. Unknown or withdrawn IDs are rejected. A stale version returns
+the selection. A withdrawn ID can be retained only if it is already in the
+authenticated user's workspace. New IDs must be in the published catalogue.
+A stale version returns
 HTTP 409 so the client can reload the latest workspace before saving again.
 Cookie-authenticated writes require an approved browser origin.
 
