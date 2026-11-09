@@ -64,7 +64,9 @@ class TestUserWorkspaceApi(unittest.TestCase):
                 mode='local', secure_cookie=False
             ),
             skill_catalogue_snapshot=self.snapshot,
-            browser_access_configuration=BrowserAccessConfiguration(allowed_origins=('http://127.0.0.1:8050',)),
+            browser_access_configuration=BrowserAccessConfiguration(
+                allowed_origins=('http://127.0.0.1:8050',)
+            ),
         )
         self.database = MosaicDatabase(configuration)
         self.addCleanup(self.database.dispose)
@@ -92,7 +94,9 @@ class TestUserWorkspaceApi(unittest.TestCase):
         for user, expected in ((self.user_a, 'skill-a'), (self.user_b, 'skill-b')):
             response = self.client.get(
                 '/api/v1/workspace?user_id=untrusted-user',
-                headers={'Authorization': f'Bearer {user.plaintext_token.get_secret_value()}'},
+                headers={
+                    'Authorization': f'Bearer {user.plaintext_token.get_secret_value()}'
+                },
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers['cache-control'], 'no-store')
@@ -130,7 +134,8 @@ class TestUserWorkspaceApi(unittest.TestCase):
         for user, skill_id in ((self.user_a, 'skill-a'), (self.user_b, 'skill-b')):
             self.assertEqual(
                 self.client.post(
-                    '/api/v1/auth/token', json={'token': user.plaintext_token.get_secret_value()}
+                    '/api/v1/auth/token',
+                    json={'token': user.plaintext_token.get_secret_value()},
                 ).status_code,
                 204,
             )
@@ -139,7 +144,12 @@ class TestUserWorkspaceApi(unittest.TestCase):
             self.assertEqual(
                 [skill['skill_id'] for skill in body['skills']], [skill_id]
             )
-            self.assertEqual(self.client.post('/api/v1/auth/logout', headers={'Origin': 'http://127.0.0.1:8050'}).status_code, 204)
+            self.assertEqual(
+                self.client.post(
+                    '/api/v1/auth/logout', headers={'Origin': 'http://127.0.0.1:8050'}
+                ).status_code,
+                204,
+            )
             self.assertEqual(self.client.get('/api/v1/workspace').status_code, 401)
 
     def test_assignment_updates_are_visible_without_restart(self) -> None:
@@ -149,7 +159,9 @@ class TestUserWorkspaceApi(unittest.TestCase):
             )
         response = self.client.get(
             '/api/v1/workspace',
-            headers={'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'},
+            headers={
+                'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+            },
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['version'], 3)
@@ -186,24 +198,135 @@ class TestUserWorkspaceApi(unittest.TestCase):
                 self.assertEqual(response.json()['workspace_id'] is None, missing)
                 self.assertEqual(response.json()['version'] is None, missing)
 
-    def test_anonymous_disabled_and_read_only_boundaries(self) -> None:
+    def test_anonymous_disabled_and_unsupported_workspace_methods(self) -> None:
         self.assertEqual(self.client.get('/api/v1/workspace').status_code, 401)
+        self.assertEqual(self.client.get('/api/v1/skills').status_code, 401)
+        self.assertEqual(
+            self.client.post(
+                '/api/v1/workspace/skills',
+                json={
+                    'expected_version': 2,
+                    'skill_ids': [],
+                },
+            ).status_code,
+            401,
+        )
         for method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             response = self.client.request(
                 method,
                 '/api/v1/workspace',
-                headers={'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'},
+                headers={
+                    'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+                },
                 json={'skills': []},
             )
             self.assertEqual(response.status_code, 405)
         self.administration.disable_user(self.user_a.user_id)
         self.assertEqual(
-            self.client.get(
-                '/api/v1/workspace',
-                headers={'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'},
+            self.client.post(
+                '/api/v1/workspace/skills',
+                headers={
+                    'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+                },
+                json={'expected_version': 2, 'skill_ids': []},
             ).status_code,
             401,
         )
+        self.assertEqual(
+            self.client.get(
+                '/api/v1/workspace',
+                headers={
+                    'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+                },
+            ).status_code,
+            401,
+        )
+
+    def test_public_catalogue_and_cookie_save_with_origin_protection(self) -> None:
+        self.assertEqual(
+            self.client.post(
+                '/api/v1/auth/token',
+                json={
+                    'token': self.user_a.plaintext_token.get_secret_value(),
+                },
+            ).status_code,
+            204,
+        )
+        catalogue = self.client.get('/api/v1/skills')
+        self.assertEqual(catalogue.status_code, 200)
+        self.assertEqual(catalogue.headers['cache-control'], 'no-store')
+        self.assertEqual(
+            [skill['skill_id'] for skill in catalogue.json()], ['skill-a', 'skill-b']
+        )
+        self.assertNotIn('Private synthetic instruction.', catalogue.text)
+        selection = {'expected_version': 2, 'skill_ids': ['skill-b']}
+        self.assertEqual(
+            self.client.post('/api/v1/workspace/skills', json=selection).status_code,
+            403,
+        )
+        origin = {'Origin': 'http://127.0.0.1:8050'}
+        saved = self.client.post(
+            '/api/v1/workspace/skills', headers=origin, json=selection
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.headers['cache-control'], 'no-store')
+        self.assertEqual(saved.json()['version'], 3)
+        self.assertEqual(
+            [skill['skill_id'] for skill in saved.json()['skills']], ['skill-b']
+        )
+        self.assertEqual(self.client.get('/api/v1/workspace').json(), saved.json())
+        cleared = self.client.post(
+            '/api/v1/workspace/skills',
+            headers=origin,
+            json={
+                'expected_version': 3,
+                'skill_ids': [],
+            },
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json()['skills'], [])
+        self.assertEqual(cleared.json()['version'], 4)
+        with self.database.create_session() as session:
+            self.assertEqual(
+                WorkspaceService(session).get_for_user(self.user_b.user_id).version, 2
+            )
+
+    def test_invalid_and_stale_selections_preserve_the_latest_assignment(self) -> None:
+        headers = {
+            'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+        }
+        route = '/api/v1/workspace/skills'
+        for payload, status in (
+            ({'expected_version': 2, 'skill_ids': ['skill-b', 'withdrawn-skill']}, 400),
+            ({'expected_version': 2, 'skill_ids': ['skill-b', 'skill-b']}, 422),
+            (
+                {
+                    'expected_version': 2,
+                    'skill_ids': [],
+                    'user_id': self.user_b.user_id,
+                },
+                422,
+            ),
+        ):
+            with self.subTest(status=status):
+                self.assertEqual(
+                    self.client.post(route, headers=headers, json=payload).status_code,
+                    status,
+                )
+        self.assertEqual(
+            self.client.get('/api/v1/workspace', headers=headers).json()['version'], 2
+        )
+        with self.database.create_session() as session, session.begin():
+            WorkspaceService(session).replace_skill_ids(
+                self.user_a.user_id, 2, ('skill-b',), datetime.now(UTC)
+            )
+        stale = self.client.post(
+            route, headers=headers, json={'expected_version': 2, 'skill_ids': []}
+        )
+        self.assertEqual(stale.status_code, 409)
+        latest = self.client.get('/api/v1/workspace', headers=headers).json()
+        self.assertEqual(latest['version'], 3)
+        self.assertEqual([skill['skill_id'] for skill in latest['skills']], ['skill-b'])
 
     def test_catalogue_failure_is_not_reported_as_an_empty_workspace(self) -> None:
         with patch.object(
@@ -213,7 +336,9 @@ class TestUserWorkspaceApi(unittest.TestCase):
         ):
             response = self.client.get(
                 '/api/v1/workspace',
-                headers={'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'},
+                headers={
+                    'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+                },
             )
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.headers['cache-control'], 'no-store')

@@ -507,7 +507,7 @@ administrators, and the choices an individual user will eventually make.
 | **MOSAIC platform configuration** | MOSAIC platform administrators | Connect and operate the MOSAIC runtime, select its approved model, locate its governed configuration sources, and enforce deployment-wide limits. |
 | **Operational domain contributions** | Platform and domain teams such as OpenShift, database, observability, and MQ teams | Contribute approved **Skills** and the integration definitions needed to connect their domain knowledge to governed **Capabilities** and **Providers**. |
 | **Workspace and access governance** | Tenant, workspace, and access administrators | Determine which approved **Skills** and **Targets** are available to a tenant, workspace, team, or role, and govern Skill profiles, quotas, and access policy. The current MVP implements only a temporary subset of this boundary. |
-| **User and Session configuration** | Users | Select from the **Skills** already authorised for them, manage permitted Session preferences, and identify the intended **Target** through conversation. The self-service experience is future work. |
+| **User and Session configuration** | Users | Select published **Skills** for their own workspace through the pilot API and identify the intended **Target** through conversation. The GUI editor is a separate follow-up. |
 
 ### MOSAIC platform configuration
 
@@ -688,16 +688,24 @@ assigned Skill labels, descriptions, kinds and catalogue group paths. It
 accepts no ownership selector and returns `Cache-Control: no-store`.
 Missing or empty workspaces return an empty Skill list; withdrawn catalogue
 references are omitted. Executable instructions, output schemas, capability
-declarations and credentials are never included. There is no public workspace
-editing route; administrators retain control of assignments.
+declarations and credentials are never included.
 
 This endpoint describes current workspace assignments, not the immutable Skill
 snapshot of an already-active Goal. The independent GUI can use it after sign-in
 to populate its identity and read-only Skills panel.
 
-The normal agent obtains its Skill allowlist from the authenticated user's
-workspace in `mosaic.db`. Administrators manage these assignments using
-`mosaic-admin`; the browser does not grant or modify access.
+For the pilot, all Skills in the active published catalogue are public to
+signed-in users. `GET /api/v1/skills` returns their display metadata as an array.
+`POST /api/v1/workspace/skills` replaces the authenticated user's selection and
+returns the saved workspace summary. Send `expected_version` from the workspace
+read and `skill_ids` as the complete list of selected IDs. An empty list clears
+the selection. Unknown or withdrawn IDs are rejected. A stale version returns
+HTTP 409 so the client can reload the latest workspace before saving again.
+Cookie-authenticated writes require an approved browser origin.
+
+The normal agent obtains its active Skill set from the authenticated user's
+workspace in `mosaic.db`. Administrators can also update the selection through
+`mosaic-admin`. The workspace version protects updates from both paths.
 
 For each new Goal, MOSAIC verifies the enabled user and owned public
 conversation, then binds an immutable snapshot of the workspace's assigned
@@ -735,9 +743,8 @@ identify the intended Target through the conversation, either in the original
 Request or in response to clarification, and MOSAIC may reuse a compatible
 Target within the same Session.
 
-The MVP does not yet provide this self-service experience. Skill profiles and
-Session assignments currently remain platform-managed through the temporary
-environment-variable configuration described above.
+The pilot workspace API supports self-service selection from the active
+published catalogue. The GUI editor is a separate follow-up.
 
 ## The capability runtime snapshot
 
