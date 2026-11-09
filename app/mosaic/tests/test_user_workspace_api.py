@@ -242,6 +242,39 @@ class TestUserWorkspaceApi(unittest.TestCase):
             401,
         )
 
+    def test_catalogue_browse_and_search_return_bounded_public_pages(self) -> None:
+        headers = {
+            'Authorization': f'Bearer {self.user_a.plaintext_token.get_secret_value()}'
+        }
+        path = '/api/v1/skills/catalogue'
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.assertEqual(
+            self.client.get(path, headers=headers, params={'limit': 1}).json(),
+            {'items': ['other-domain'], 'next_offset': 1},
+        )
+        self.assertEqual(
+            self.client.get(
+                path, headers=headers, params={'domain': 'synthetic-domain'}
+            ).json(),
+            {'items': ['first-function', '~'], 'next_offset': None},
+        )
+        for filters, expected in (
+            ({'domain': 'synthetic-domain', 'function': '~'}, 'skill-b'),
+            ({'domain': 'synthetic-domain', 'function': 'first-function'}, 'skill-a'),
+            ({'q': 'FIRST function'}, 'skill-a'),
+        ):
+            response = self.client.get(path, headers=headers, params=filters)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            self.assertEqual(
+                [item['skill_id'] for item in response.json()['items']], [expected]
+            )
+            self.assertNotIn('Private synthetic instruction.', response.text)
+        self.assertEqual(
+            self.client.get(path, headers=headers, params={'limit': 101}).status_code,
+            422,
+        )
+
     def test_public_catalogue_and_cookie_save_with_origin_protection(self) -> None:
         self.assertEqual(
             self.client.post(

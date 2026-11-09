@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
 
 from ..identity.trusted_request_context_dependency import TrustedRequestContextDependency
 from ..persistence.mosaic_database import MosaicDatabase
@@ -86,6 +86,78 @@ class UserWorkspaceApi:
             """
             response.headers['Cache-Control'] = 'no-store'
             return self._summarise_skills(self._get_catalogue())
+
+        @router.get('/skills/catalogue')
+        def browse_skills(
+            response: Response,
+            context: Annotated[
+                TrustedRequestContext, Depends(self._context_dependency)
+            ],
+            domain: Annotated[str | None, Query(min_length=1, max_length=129)] = None,
+            function: Annotated[str | None, Query(min_length=1, max_length=129)] = None,
+            q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+            offset: Annotated[int, Query(ge=0)] = 0,
+            limit: Annotated[int, Query(ge=1, le=100)] = 30,
+        ) -> dict[str, tuple[str | WorkspaceSkillSummary, ...] | int | None]:
+            """
+            Page through published domains, functions, Skills or search results.
+
+            :param response: Response receiving a private-data caching prohibition.
+            :param context: Required trusted authentication context.
+            :param domain: Domain whose functions or Skills to list.
+            :param function: Function whose Skills to list within the domain.
+            :param q: Case-insensitive search across names, descriptions and groups.
+            :param offset: Starting position within the sorted results.
+            :param limit: Maximum results to return.
+
+            :return: Page items and the next offset, when more results exist.
+
+            :raise HTTPException: If browsing and search parameters are combined.
+            """
+            response.headers['Cache-Control'] = 'no-store'
+            if (function is not None and domain is None) or (
+                q is not None and domain is not None
+            ):
+                raise HTTPException(400, 'Invalid catalogue filters')
+            snapshot = self._get_catalogue()
+            paths = self._catalogue_paths(snapshot)
+            if q is not None:
+                terms = q.replace('-', ' ').replace('/', ' ').casefold().split()
+                matches = []
+                for skill in snapshot.skills:
+                    text = ' '.join(
+                        (skill.name, skill.description, *paths[skill.name])
+                    ).replace('-', ' ').replace('/', ' ').casefold()
+                    if terms and all(term in text for term in terms):
+                        matches.append(skill.name)
+                matches.sort()
+            elif domain is None:
+                matches = sorted(
+                    {path.split('/')[0] for groups in paths.values() for path in groups}
+                )
+            elif function is None:
+                prefix = f'{domain}/'
+                matches = sorted({
+                    path.removeprefix(prefix)
+                    for groups in paths.values()
+                    for path in groups
+                    if path.startswith(prefix)
+                })
+            else:
+                matches = sorted(
+                    skill_id
+                    for skill_id, groups in paths.items()
+                    if f'{domain}/{function}' in groups
+                )
+            page = matches[offset : offset + limit]
+            return {
+                'items': self._summarise_skills(snapshot, set(page))
+                if q is not None or function is not None
+                else tuple(page),
+                'next_offset': offset + limit
+                if offset + limit < len(matches)
+                else None,
+            }
 
         @router.post('/workspace/skills')
         def save_skills(
@@ -194,23 +266,47 @@ class UserWorkspaceApi:
 
         :return: Sorted display metadata without executable Skill content.
         """
+        memberships: dict[str, list[str]] = {}
+        for group in sorted(snapshot.groups, key=lambda item: item.group_id):
+            for skill_id in group.skill_ids:
+                if selected is None or skill_id in selected:
+                    memberships.setdefault(skill_id, []).append(group.group_id)
         return tuple(
             WorkspaceSkillSummary(
                 skill_id=skill.name,
                 display_name=skill.name.replace('-', ' ').capitalize(),
                 description=skill.description,
                 kind=skill.kind,
-                groups=tuple(
-                    sorted(
-                        group.group_id
-                        for group in snapshot.groups
-                        if skill.name in group.skill_ids
-                    )
-                ),
+                groups=tuple(memberships.get(skill.name, ())),
             )
             for skill in sorted(snapshot.skills, key=lambda item: item.name)
             if selected is None or skill.name in selected
         )
+
+    def _catalogue_paths(self, snapshot: SkillCatalogueSnapshot) -> dict[str, set[str]]:
+        """
+        Place Skills at their most specific path within each domain.
+
+        Use the reserved marker ~ for General functions and Ungrouped Skills.
+
+        :param snapshot: Published Skill catalogue.
+
+        :return: Browsable paths indexed by Skill ID.
+        """
+        memberships: dict[str, set[str]] = {
+            skill.name: set() for skill in snapshot.skills
+        }
+        for group in snapshot.groups:
+            for skill_id in group.skill_ids:
+                memberships[skill_id].add(group.group_id)
+        paths = {}
+        for skill_id, groups in memberships.items():
+            nested = {group for group in groups if '/' in group}
+            parents = {group.split('/')[0] for group in nested}
+            paths[skill_id] = nested | {
+                f'{group}/~' for group in groups - nested - parents
+            } or {'~/~'}
+        return paths
 
     def _get_catalogue(self) -> SkillCatalogueSnapshot:
         """

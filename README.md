@@ -696,6 +696,9 @@ to populate its identity and read-only Skills panel.
 
 For the pilot, all Skills in the active published catalogue are public to
 signed-in users. `GET /api/v1/skills` returns their display metadata as an array.
+`GET /api/v1/skills/catalogue` returns paged domains, functions within a domain,
+or Skills within a function. Use `q` for catalogue-wide search and `next_offset`
+to request another page.
 `POST /api/v1/workspace/skills` replaces the authenticated user's selection and
 returns the saved workspace summary. Send `expected_version` from the workspace
 read and `skill_ids` as the complete list of selected IDs. An empty list clears
