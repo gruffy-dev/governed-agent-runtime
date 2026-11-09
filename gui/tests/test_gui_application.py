@@ -15,7 +15,10 @@ class TestGuiApplication(unittest.TestCase):
             .get('/_dash-layout')
             .get_json()
         )
-        screens = layout['props']['children'][1]['props']['children']
+        screens = next(
+            child['props']['children'] for child in layout['props']['children']
+            if child['props'].get('id') == 'workspace-main'
+        )
         card = screens[0]['props']['children'][1]
         credit = card['props']['children']['props']['children'][-1]
         self.assertEqual(credit['type'], 'P')
@@ -31,9 +34,11 @@ class TestGuiApplication(unittest.TestCase):
             .get('/_dash-layout')
             .get_json()
         )
-        introduction = layout['props']['children'][1]['props']['children'][0]['props'][
-            'children'
-        ][0]['props']['children']
+        screens = next(
+            child['props']['children'] for child in layout['props']['children']
+            if child['props'].get('id') == 'workspace-main'
+        )
+        introduction = screens[0]['props']['children'][0]['props']['children']
         self.assertEqual(len(introduction), 1)
         self.assertEqual(introduction[0]['type'], 'H1')
         self.assertIn('Intelligence,', str(introduction[0]))

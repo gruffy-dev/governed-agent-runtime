@@ -30,8 +30,7 @@ export class WorkspaceController {
         document.addEventListener("click", event => this.#click(event));
         document.addEventListener("input", event => {
             if (event.target.id === "skill-search" && this.#skillEditor) {
-                this.#skillEditor.query = event.target.value;
-                this.#renderSkillOptions();
+                this.#searchSkills(event.target.value);
             }
         });
         document.addEventListener("keydown", event => this.#key(event));
@@ -135,7 +134,10 @@ export class WorkspaceController {
         this.#props("user-label", {children: workspace.user_id});
         this.#props("sign-out", {style: {display: "inline-block"}});
         this.#props("login-screen", {style: {display: "none"}});
-        this.#props("workspace-screen", {style: {display: "flex"}});
+        this.#props("workspace-navigation", {style: {display: "flex"}});
+        this.#props("workspace-main", {className: "page-main workspace-page"});
+        this.#showWorkspaceView(false);
+        this.#setPanelVisibility("skills", false);
         this.#renderSkills();
         this.#select(null);
         await this.#refreshHistory(epoch);
@@ -146,8 +148,6 @@ export class WorkspaceController {
          */
         if (this.#streamController && !window.confirm("Signing out stops this response and may make this conversation read-only. Continue?")) return;
         ++this.#epoch;
-        this.#operation?.abort();
-        this.#streamController?.abort();
         this.#reset();
         this.#busy = true;
         this.#controls();
@@ -160,9 +160,13 @@ export class WorkspaceController {
          * Remove previous-user data from memory and the UI without browser storage.
          */
         this.#clearActivity();
+        this.#operation?.abort();
+        this.#streamController?.abort();
         this.#signedIn = false;
         this.#workspace = this.#conversation = null;
         this.#closeSkillEditor();
+        this.#props("workspace-navigation", {style: {display: "none"}});
+        this.#props("workspace-main", {className: "page-main"});
         this.#conversations = this.#messages = [];
         this.#streamController = this.#operation = null;
         document.getElementById("pilot-token").value = "";
@@ -403,7 +407,7 @@ export class WorkspaceController {
          */
         const skills = this.#workspace?.skills || [];
         this.#props("skill-count", {children: `${skills.length} assigned ${skills.length === 1 ? "Skill" : "Skills"}`});
-        if (!skills.length) {this.#props("skills-list", {children: this.#element("P", {className: "empty-skills", children: "No Skills are selected. Use Manage Skills to choose them."})}); return;}
+        if (!skills.length) {this.#props("skills-list", {children: this.#element("P", {className: "empty-skills", children: "No Skills are selected. Open the Skills tab to choose them."})}); return;}
         const groups = new Map();
         for (const skill of skills) {
             const group = [...skill.groups].sort((left, right) => right.split("/").length - left.split("/").length || left.localeCompare(right))[0] || "Assigned Skills";
@@ -417,83 +421,278 @@ export class WorkspaceController {
         }, "dash_bootstrap_components"));
         this.#props("skills-list", {children: this.#element("Accordion", {children: items, always_open: true, start_collapsed: false, active_item: items.map(item => item.props.item_id)}, "dash_bootstrap_components")});
     }
+    #showWorkspaceView(skills) {
+        /**
+         * Switch workspace views while preserving the conversation and Skill draft.
+         * :param skills: Whether to show the Skill browser.
+         */
+        this.#props("workspace-screen", {style: {display: skills ? "none" : "flex"}});
+        this.#props("skill-editor", {style: {display: skills ? "block" : "none"}});
+        this.#props("show-chat", {"aria-current": skills ? null : "page"});
+        this.#props("show-skill-browser", {"aria-current": skills ? "page" : null});
+        if (skills && !this.#skillEditor) this.#openSkillEditor();
+    }
     async #openSkillEditor() {
         /**
-         * Load published Skills and the current saved selection before editing.
+         * Start a draft from the latest saved workspace and load the first domain page.
          */
-        if (this.#busy || this.#streamController || !this.#signedIn || this.#skillEditor) return;
-        const epoch = this.#epoch;
-        this.#busy = true;
+        const editor = {
+            selected: new Map(), saved: new Set(), version: null, ready: false,
+            domain: null, function: null, query: "", level: "domains", timer: null,
+            pages: {}, request: null, loading: null,
+        };
+        this.#skillEditor = editor;
+        this.#renderSkillBrowser();
         this.#controls();
         try {
-            const [catalogue, workspace] = await Promise.all([
-                this.#client.request("/api/v1/skills"),
-                this.#client.request("/api/v1/workspace"),
-            ]);
-            if (epoch !== this.#epoch) return;
+            const workspace = await this.#client.request("/api/v1/workspace");
+            if (this.#skillEditor !== editor) return;
             this.#workspace = workspace;
             this.#renderSkills();
-            if (workspace.version === null) {
-                this.#failure(new Error("This account has no workspace to edit. Contact your administrator."));
-                return;
+            editor.version = workspace.version;
+            editor.selected = new Map(workspace.skills.map(skill => [skill.skill_id, skill]));
+            editor.saved = new Set(editor.selected.keys());
+            editor.savedSkills = workspace.skills;
+            editor.ready = true;
+            this.#renderCurrentSkills();
+            if (editor.version === null) {
+                this.#skillEditorFailure(new Error("This account has no workspace to edit. Contact your administrator."));
             }
-            this.#skillEditor = {
-                catalogue,
-                selected: new Set(workspace.skills.map(skill => skill.skill_id)),
-                query: "",
-            };
-            this.#props("skill-search", {value: ""});
-            this.#props("skill-editor-alert", {is_open: false, children: ""});
-            this.#renderSkillOptions();
-            this.#props("skill-editor", {is_open: true});
+            await this.#loadSkillPage("domains");
         } catch (error) {
-            if (epoch === this.#epoch) this.#failure(error);
+            if (this.#skillEditor === editor) {
+                this.#skillEditorFailure(error);
+                this.#skillEditor = null;
+                this.#renderSkillBrowser();
+            }
         } finally {
-            if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
+            this.#controls();
         }
     }
-    #renderSkillOptions() {
+    async #loadSkillPage(level, more = false) {
         /**
-         * Filter the catalogue without dropping selections hidden by the search.
+         * Load only the visible catalogue branch or search page.
+         * :param level: Column or search result to populate.
+         * :param more: Append the next page to the existing results.
          */
-        const {catalogue, selected, query} = this.#skillEditor;
-        const search = query.trim().toLowerCase();
-        const options = catalogue.flatMap((skill, index) => {
-            const group = skill.groups.join(" · ").replaceAll("-", " ");
-            const text = [skill.display_name, skill.skill_id, skill.description, group].join(" ").toLowerCase();
-            if (!text.includes(search)) return [];
-            return [this.#element("Button", {
-                id: "skill-option-" + index, type: "button", className: "skill-option",
-                "aria-pressed": String(selected.has(skill.skill_id)),
-                children: [
-                    this.#element("Strong", {children: skill.display_name}),
-                    this.#element("Small", {children: group}),
-                    this.#element("Span", {children: skill.description}),
-                ],
-            })];
-        });
-        this.#props("skill-options", {children: options.length ? options : "No matching Skills."});
-        this.#props("skill-selection-count", {children: `${selected.size} selected`});
+        const editor = this.#skillEditor;
+        if (!editor?.ready) return;
+        const previous = editor.pages[level];
+        if (more && previous?.next_offset == null) return;
+        editor.request?.abort();
+        const request = new AbortController();
+        editor.request = request;
+        editor.loading = level;
+        const params = new URLSearchParams();
+        if (level === "functions" || level === "skills") params.set("domain", editor.domain);
+        if (level === "skills") params.set("function", editor.function);
+        if (level === "search") params.set("q", editor.query);
+        if (more) params.set("offset", previous.next_offset);
+        this.#renderSkillBrowser();
+        try {
+            const page = await this.#client.request("/api/v1/skills/catalogue?" + params, {signal: request.signal});
+            if (request.signal.aborted || this.#skillEditor !== editor) return;
+            editor.pages[level] = {
+                items: more ? [...previous.items, ...page.items] : page.items,
+                next_offset: page.next_offset,
+            };
+        } catch (error) {
+            if (!request.signal.aborted && this.#skillEditor === editor) this.#skillEditorFailure(error);
+        } finally {
+            if (!request.signal.aborted && this.#skillEditor === editor) {
+                editor.loading = null;
+                this.#renderSkillBrowser();
+            }
+        }
     }
-    #toggleSkill(button) {
+    #searchSkills(value) {
         /**
-         * Update one draft selection without moving keyboard focus.
-         * :param button: Catalogue option that the user activated.
+         * Debounce catalogue searches and cancel superseded requests.
+         * :param value: Text entered in the search field.
          */
-        if (this.#busy || !this.#skillEditor) return;
-        const {catalogue, selected} = this.#skillEditor;
-        const skill = catalogue[Number(button.id.slice("skill-option-".length))];
-        if (!skill) return;
-        if (selected.has(skill.skill_id)) selected.delete(skill.skill_id);
-        else selected.add(skill.skill_id);
-        this.#props(button.id, {"aria-pressed": String(selected.has(skill.skill_id))});
-        this.#props("skill-selection-count", {children: `${selected.size} selected`});
+        const editor = this.#skillEditor;
+        if (!editor?.ready) return;
+        clearTimeout(editor.timer);
+        editor.request?.abort();
+        editor.query = value.trim().slice(0, 200);
+        delete editor.pages.search;
+        editor.loading = editor.query ? "search" : null;
+        this.#renderSkillBrowser();
+        if (editor.query) editor.timer = setTimeout(() => this.#loadSkillPage("search"), 250);
+        else {
+            const level = editor.function ? "skills" : editor.domain ? "functions" : "domains";
+            if (!editor.pages[level]) this.#loadSkillPage(level);
+        }
+    }
+    #skillGroupLabel(group, fallback) {
+        /**
+         * Convert a catalogue group key into its display name.
+         * :param group: Catalogue group key or reserved ungrouped marker.
+         * :param fallback: Label for the reserved marker.
+         *
+         * :return: Group display name.
+         */
+        if (group === "~") return fallback;
+        const label = group.replaceAll("-", " ");
+        return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+    #renderSkillBrowser() {
+        /**
+         * Render the current catalogue path and its independently paged columns.
+         */
+        const editor = this.#skillEditor;
+        if (!editor) {
+            this.#props("skill-browser-columns", {children: ""});
+            this.#props("skill-browser-path", {children: ""});
+            return;
+        }
+        const path = [this.#element("Button", {id: "skill-back-domains", className: "btn btn-link", children: "Domains"})];
+        if (editor.domain) path.push(" › ", this.#element("Button", {
+            id: "skill-back-functions", className: "btn btn-link", children: this.#skillGroupLabel(editor.domain, "Ungrouped"),
+        }));
+        if (editor.function) path.push(" › ", this.#skillGroupLabel(editor.function, "General"));
+        this.#props("skill-browser-path", {children: editor.query ? "Across all domains" : path});
+        const levels = editor.query ? [["search", "Search results"]] :
+            [["domains", "Domain"], ["functions", "Function"], ["skills", "Skill"]];
+        const columns = levels.map(([level, title]) => {
+            const page = editor.pages[level];
+            const items = (page?.items || []).map((item, index) => {
+                if (typeof item !== "string") {
+                    const path = item.groups.filter(group => group.includes("/")).join(" · ") || item.groups.join(" · ");
+                    return this.#element("Div", {className: "browser-skill", children: [
+                        this.#element("Button", {
+                            id: "skill-option-" + index, type: "button", className: "skill-option",
+                            "aria-label": item.display_name,
+                            "aria-pressed": String(editor.selected.has(item.skill_id)),
+                            children: item.display_name,
+                        }),
+                        ...(level === "search" && path ? [this.#element("Small", {children: path.replaceAll("/", " › ").replaceAll("-", " ")})] : []),
+                        this.#element("Details", {children: [
+                            this.#element("Summary", {children: "Description"}),
+                            this.#element("P", {children: item.description}),
+                        ]}),
+                    ]});
+                }
+                const active = item === (level === "domains" ? editor.domain : editor.function);
+                return this.#element("Button", {
+                    id: "skill-path-" + level + "-" + index, type: "button", className: "browser-row",
+                    "aria-pressed": String(active),
+                    children: [this.#skillGroupLabel(item, level === "domains" ? "Ungrouped" : "General"), this.#element("Span", {"aria-hidden": "true", children: "›"})],
+                });
+            });
+            if (editor.loading === level) items.push(this.#element("P", {className: "browser-empty", role: "status", children: "Loading…"}));
+            else if (!items.length) {
+                const parent = level === "functions" ? editor.domain : level === "skills" ? editor.function : true;
+                const message = !editor.ready ? "Loading workspace…" : page ? "No matching Skills." :
+                    parent ? "No results loaded." : level === "functions" ? "Choose a domain." : "Choose a function.";
+                items.push(this.#element("P", {className: "browser-empty", children: message}));
+                if (editor.ready && parent && !page) items.push(this.#element("Button", {
+                    id: "skill-retry-" + level, type: "button", className: "btn btn-link btn-sm", children: "Try again",
+                }));
+            }
+            if (page?.next_offset != null) items.push(this.#element("Button", {
+                id: "skill-more-" + level, type: "button", className: "btn btn-link btn-sm",
+                disabled: editor.loading !== null, children: "Load more",
+            }));
+            return this.#element("Section", {
+                className: "browser-column" + (editor.query || level === editor.level ? " current-column" : ""),
+                children: [this.#element("H2", {children: title}), this.#element("Div", {className: "browser-list", children: items})],
+            });
+        });
+        this.#props("skill-browser-columns", {
+            className: "browser-columns" + (editor.query ? " search-results" : ""), children: columns,
+        });
+    }
+    #renderCurrentSkills() {
+        /**
+         * Update the selection panel and indicate changes that have yet to be saved.
+         */
+        const editor = this.#skillEditor;
+        const items = [...editor.selected.values()].map((skill, index) => this.#element("Div", {
+            className: "selected-item",
+            children: [
+                this.#element("Div", {children: [
+                    this.#element("Strong", {children: skill.display_name}),
+                    this.#element("Small", {children: (skill.groups.find(group => group.includes("/")) || skill.groups[0] || "Ungrouped").replaceAll("/", " › ").replaceAll("-", " ")}),
+                ]}),
+                this.#element("Button", {
+                    id: "skill-remove-" + index, type: "button", className: "btn btn-link",
+                    "aria-label": "Remove " + skill.display_name, children: "×",
+                }),
+            ],
+        }));
+        this.#props("current-skills", {children: items.length ? items : "No Skills selected."});
+        this.#props("skill-selection-count", {children: `${editor.selected.size} selected`});
+        this.#props("skill-save-status", {children: this.#hasSkillChanges() ? "Unsaved changes" : ""});
+    }
+    #hasSkillChanges() {
+        /**
+         * Compare the current draft with its saved baseline.
+         *
+         * :return: Whether any selected Skill differs from the baseline.
+         */
+        const editor = this.#skillEditor;
+        return Boolean(editor?.ready && (
+            editor.selected.size !== editor.saved.size || [...editor.selected.keys()].some(id => !editor.saved.has(id))
+        ));
+    }
+    #skillBrowserAction(id) {
+        /**
+         * Handle column navigation, pagination and selection edits.
+         * :param id: Identifier of the activated browser control.
+         */
+        const editor = this.#skillEditor;
+        if (!editor?.ready) return;
+        const [, action, level, index] = id.split("-");
+        if (action === "more" || action === "retry") {
+            this.#loadSkillPage(level, action === "more");
+        } else if (action === "back") {
+            editor.level = level;
+            this.#renderSkillBrowser();
+        } else if (action === "path") {
+            const item = editor.pages[level]?.items[Number(index)];
+            if (!item) return;
+            if (level === "domains") {
+                editor.domain = item;
+                editor.function = null;
+                delete editor.pages.functions;
+                delete editor.pages.skills;
+                editor.level = "functions";
+            } else {
+                editor.function = item;
+                delete editor.pages.skills;
+                editor.level = "skills";
+            }
+            this.#loadSkillPage(editor.level);
+        } else if (!this.#busy && (action === "option" || action === "remove")) {
+            const page = editor.pages[editor.query ? "search" : "skills"];
+            const skill = action === "remove" ? [...editor.selected.values()][Number(level)] : page?.items[Number(level)];
+            if (!skill) return;
+            if (editor.selected.has(skill.skill_id)) editor.selected.delete(skill.skill_id);
+            else editor.selected.set(skill.skill_id, skill);
+            const position = page?.items.findIndex(item => item.skill_id === skill.skill_id);
+            if (position >= 0) this.#props("skill-option-" + position, {"aria-pressed": String(editor.selected.has(skill.skill_id))});
+            this.#renderCurrentSkills();
+            this.#controls();
+        }
+    }
+    #discardSkillChanges() {
+        /**
+         * Restore the latest saved selection while keeping the current catalogue path.
+         */
+        const editor = this.#skillEditor;
+        if (this.#busy || !editor?.ready) return;
+        editor.selected = new Map(editor.savedSkills.map(skill => [skill.skill_id, skill]));
+        this.#props("skill-editor-alert", {is_open: false});
+        this.#renderSkillBrowser();
+        this.#renderCurrentSkills();
+        this.#controls();
     }
     async #saveSkillSelection() {
         /**
          * Save the whole draft once and let the user review conflicts before retrying.
          */
-        if (this.#busy || !this.#skillEditor || this.#workspace.version === null) return;
+        if (this.#busy || !this.#hasSkillChanges() || this.#skillEditor.version === null) return;
         const epoch = this.#epoch;
         this.#busy = true;
         this.#controls();
@@ -501,12 +700,19 @@ export class WorkspaceController {
         try {
             const workspace = await this.#client.request("/api/v1/workspace/skills", {
                 method: "POST",
-                body: {expected_version: this.#workspace.version, skill_ids: [...this.#skillEditor.selected]},
+                body: {expected_version: this.#skillEditor.version, skill_ids: [...this.#skillEditor.selected.keys()]},
             });
             if (epoch !== this.#epoch) return;
             this.#workspace = workspace;
             this.#renderSkills();
-            this.#closeSkillEditor();
+            const editor = this.#skillEditor;
+            editor.version = workspace.version;
+            editor.savedSkills = workspace.skills;
+            editor.selected = new Map(workspace.skills.map(skill => [skill.skill_id, skill]));
+            editor.saved = new Set(editor.selected.keys());
+            this.#renderSkillBrowser();
+            this.#renderCurrentSkills();
+            this.#props("skill-save-status", {children: "Skills saved"});
         } catch (error) {
             if (epoch !== this.#epoch) return;
             if (error.status === 409) await this.#reviewSkillConflict(epoch, error);
@@ -526,6 +732,11 @@ export class WorkspaceController {
             if (epoch !== this.#epoch) return;
             this.#workspace = workspace;
             this.#renderSkills();
+            const editor = this.#skillEditor;
+            editor.version = workspace.version;
+            editor.savedSkills = workspace.skills;
+            editor.saved = new Set(workspace.skills.map(skill => skill.skill_id));
+            this.#renderCurrentSkills();
             const saved = workspace.skills.map(skill => skill.display_name).join(", ") || "None";
             const message = workspace.version === null
                 ? "This workspace is no longer available. Cancel and contact your administrator."
@@ -547,9 +758,13 @@ export class WorkspaceController {
         /**
          * Discard editor state and remove the draft from the interface.
          */
+        clearTimeout(this.#skillEditor?.timer);
+        this.#skillEditor?.request?.abort();
         this.#skillEditor = null;
-        this.#props("skill-editor", {is_open: false});
-        this.#props("skill-options", {children: ""});
+        this.#props("skill-editor", {style: {display: "none"}});
+        this.#renderSkillBrowser();
+        this.#props("current-skills", {children: ""});
+        this.#props("skill-save-status", {children: ""});
         this.#props("skill-search", {value: ""});
         this.#props("skill-selection-count", {children: ""});
         this.#props("skill-editor-alert", {is_open: false, children: ""});
@@ -561,9 +776,10 @@ export class WorkspaceController {
         const streaming = Boolean(this.#streamController);
         const blocked = this.#busy || streaming;
         this.#props("sign-in", {disabled: this.#busy});
-        this.#props("manage-skills", {disabled: blocked || !this.#signedIn});
-        this.#props("save-skills", {disabled: this.#busy || !this.#skillEditor || this.#workspace.version === null});
-        this.#props("cancel-skills", {disabled: this.#busy});
+        const dirty = this.#hasSkillChanges();
+        this.#props("skill-search", {disabled: !this.#skillEditor?.ready});
+        this.#props("save-skills", {disabled: this.#busy || !dirty || this.#skillEditor.version === null});
+        this.#props("cancel-skills", {disabled: this.#busy || !dirty});
         this.#props("new-conversation", {disabled: blocked || !this.#signedIn});
         this.#props("send-message", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
         this.#props("message-input", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
@@ -610,10 +826,11 @@ export class WorkspaceController {
         else if (id === "new-conversation") this.#newConversation();
         else if (id === "send-message") this.#submit();
         else if (id === "stop-stream") this.#streamController?.abort();
-        else if (id === "manage-skills") this.#openSkillEditor();
+        else if (id === "show-chat" && this.#signedIn) this.#showWorkspaceView(false);
+        else if (id === "show-skill-browser" && this.#signedIn) this.#showWorkspaceView(true);
         else if (id === "save-skills") this.#saveSkillSelection();
-        else if (id === "cancel-skills" && !this.#busy) this.#closeSkillEditor();
-        else if (id.startsWith("skill-option-")) this.#toggleSkill(button);
+        else if (id === "cancel-skills") this.#discardSkillChanges();
+        else if (id.startsWith("skill-")) this.#skillBrowserAction(id);
         else if (id === "history-toggle" || id === "history-show") this.#toggle("history");
         else if (id === "skills-toggle" || id === "skills-show") this.#toggle("skills");
         else if (id.startsWith("conversation-")) this.#loadConversation(id.slice(13));
@@ -633,9 +850,17 @@ export class WorkspaceController {
          * :param side: Conversations or Skills panel selector.
          */
         const hidden = window.getComputedStyle(document.getElementById(side + "-panel")).display !== "none";
-        this.#props(side + "-panel", {style: {display: hidden ? "none" : "flex"}});
-        this.#props(side + "-resizer", {style: {display: hidden ? "none" : "block"}});
-        this.#props(side + "-show", {style: {display: hidden ? "inline-block" : "none"}});
+        this.#setPanelVisibility(side, !hidden);
+    }
+    #setPanelVisibility(side, visible) {
+        /**
+         * Show a sidebar with its resizer or expose its compact restore button.
+         * :param side: Conversations or Skills panel selector.
+         * :param visible: Whether the sidebar is expanded.
+         */
+        this.#props(side + "-panel", {style: {display: visible ? "flex" : "none"}});
+        this.#props(side + "-resizer", {style: {display: visible ? "block" : "none"}});
+        this.#props(side + "-show", {style: {display: visible ? "none" : "inline-block"}});
     }
     #resize(side) {
         /**

@@ -4,11 +4,12 @@ import {WorkspaceController} from "../src/mosaic_gui/assets/workspace_controller
 
 class TestWorkspaceController {
     static setup() {
-        const originals = Object.fromEntries(["document", "window", "fetch", "requestAnimationFrame", "setInterval", "clearInterval", "performance"].map(key => [key, globalThis[key]]));
+        const originals = Object.fromEntries(["document", "window", "fetch", "requestAnimationFrame", "setInterval", "clearInterval", "setTimeout", "clearTimeout", "performance"].map(key => [key, globalThis[key]]));
         const elements = new Map();
         const listeners = new Map();
         const requests = [];
         const timers = new Map();
+        const timeouts = new Map();
         const element = id => {
             if (!elements.has(id)) elements.set(id, {id, value: "", disabled: false, dataset: {}, scrollHeight: 0, scrollTop: 0, clientHeight: 100,
                 setAttribute() {}, append() {}, addEventListener() {}, querySelectorAll: () => []});
@@ -23,13 +24,23 @@ class TestWorkspaceController {
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
         globalThis.clearInterval = id => timers.delete(id);
+        globalThis.setTimeout = callback => {const id = {}; timeouts.set(id, callback); return id;};
+        globalThis.clearTimeout = id => timeouts.delete(id);
         globalThis.fetch = async (url, options) => {
             requests.push({url, options});
             const path = new URL(url).pathname;
             const failure = () => Response.json({detail: "private synthetic diagnostic"}, {status: state.failureStatus, headers: state.correlationId ? {"X-Correlation-ID": state.correlationId} : {}});
             if (path === "/api/v1/auth/token") return state.failSignIn ? failure() : new Response(null, {status: 204});
             if (path === "/api/v1/workspace") return Response.json({user_id: "synthetic-user", skills: state.skills, version: state.version});
-            if (path === "/api/v1/skills") return Response.json(state.catalogue);
+            if (path === "/api/v1/skills/catalogue") {
+                const params = new URL(url).searchParams;
+                const query = params.get("q");
+                if (query) return Response.json({items: state.catalogue.filter(skill => skill.skill_id.includes(query)), next_offset: null});
+                if (params.has("function")) return Response.json({items: state.catalogue, next_offset: null});
+                if (params.has("domain")) return Response.json({items: ["function"], next_offset: null});
+                return Response.json(params.has("offset") ?
+                    {items: ["second-domain"], next_offset: null} : {items: ["example"], next_offset: 1});
+            }
             if (path === "/api/v1/workspace/skills") {
                 const body = JSON.parse(options.body);
                 if (body.expected_version !== state.version) return Response.json({}, {status: 409});
@@ -49,7 +60,10 @@ class TestWorkspaceController {
         return {element, requests, state, timers,
             tick: milliseconds => {state.now += milliseconds; for (const callback of timers.values()) callback();},
             click: id => listeners.get("click")({target: {closest: () => element(id)}}),
-            input: (id, value) => listeners.get("input")({target: Object.assign(element(id), {value})}),
+            input: (id, value) => {
+                listeners.get("input")({target: Object.assign(element(id), {value})});
+                for (const [timer, callback] of timeouts) {timeouts.delete(timer); callback();}
+            },
             creations: () => requests.filter(request => new URL(request.url).pathname === "/api/v1/conversations" && request.options.method === "POST"),
             restore: () => {
                 for (const [key, value] of Object.entries(originals)) {
@@ -71,21 +85,32 @@ class TestWorkspaceController {
                 state.catalogue = [alpha, beta];
                 state.skills = [alpha];
                 await this.settle();
-                click("manage-skills");
+                click("show-skill-browser");
                 await this.settle();
-                assert.equal(element("skill-editor").is_open, true);
+                assert.equal(element("skill-editor").style.display, "block");
+                assert.equal(requests.filter(request => request.url.includes("/skills/catalogue")).length, 1);
+                click("skill-more-domains");
+                await this.settle();
+                assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?offset=1")));
+                click("skill-path-domains-0");
+                await this.settle();
+                click("skill-path-functions-0");
+                await this.settle();
                 input("skill-search", "beta");
-                assert.deepEqual(element("skill-options").children.map(option => option.props.id), ["skill-option-1"]);
-                click("skill-option-1");
+                await this.settle();
+                assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?q=beta")));
+                click("skill-option-0");
                 assert.equal(element("skill-selection-count").children, "2 selected");
                 click("save-skills");
                 await this.settle();
-                assert.equal(element("skill-editor").is_open, false);
+                assert.equal(element("skill-save-status").children, "Skills saved");
                 assert.equal(element("skill-count").children, "2 assigned Skills");
-                click("manage-skills");
-                await this.settle();
-                click("skill-option-0");
-                click("skill-option-1");
+                click("skill-remove-0");
+                click("skill-remove-0");
+                click("cancel-skills");
+                assert.equal(element("skill-selection-count").children, "2 selected");
+                click("skill-remove-0");
+                click("skill-remove-0");
                 click("save-skills");
                 await this.settle();
                 assert.equal(element("skill-count").children, "0 assigned Skills");
@@ -98,20 +123,26 @@ class TestWorkspaceController {
         });
         test("Skill conflicts show the saved selection and require a fresh click to retry", async () => {
             const fixture = this.setup();
-            const {state, element, click, requests} = fixture;
+            const {state, element, click, input, requests} = fixture;
             const alpha = {skill_id: "alpha", display_name: "Alpha", description: "", groups: []};
             const beta = {skill_id: "beta", display_name: "Beta", description: "", groups: []};
             try {
                 state.catalogue = [alpha, beta];
                 await this.settle();
-                click("manage-skills");
+                click("show-skill-browser");
+                await this.settle();
+                input("skill-search", "alpha");
                 await this.settle();
                 click("skill-option-0");
+                element("message-input").value = "Keep this chat draft";
+                click("show-chat");
+                click("show-skill-browser");
+                assert.equal(element("message-input").value, "Keep this chat draft");
                 state.skills = [beta];
                 state.version = 2;
                 click("save-skills");
                 await this.settle();
-                assert.equal(element("skill-editor").is_open, true);
+                assert.equal(element("skill-editor").style.display, "block");
                 assert.match(element("skill-editor-alert").children, /Currently saved: Beta/);
                 assert.equal(element("skill-option-0")["aria-pressed"], "true");
                 assert.equal(requests.filter(request => request.url.endsWith("/workspace/skills")).length, 1);

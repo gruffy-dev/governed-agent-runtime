@@ -84,6 +84,16 @@ class GuiLayout:
                     ],
                     className='workspace-header',
                 ),
+                html.Nav(
+                    [
+                        html.Button('Chat', id='show-chat', type='button'),
+                        html.Button('Skills', id='show-skill-browser', type='button'),
+                    ],
+                    id='workspace-navigation',
+                    className='workspace-navigation',
+                    style={'display': 'none'},
+                    **{'aria-label': 'Workspace'},
+                ),
                 html.Main(
                     [
                         html.Div(
@@ -390,15 +400,7 @@ class GuiLayout:
                                             className='panel-heading',
                                         ),
                                         html.Div(
-                                            [
-                                                html.Span(id='skill-count'),
-                                                dbc.Button(
-                                                    'Manage Skills',
-                                                    id='manage-skills',
-                                                    color='outline-primary',
-                                                    size='sm',
-                                                ),
-                                            ],
+                                            html.Span(id='skill-count'),
                                             className='skill-summary',
                                         ),
                                         html.Div(
@@ -417,63 +419,109 @@ class GuiLayout:
                             className='workspace-screen',
                             style={'display': 'none'},
                         ),
+                        self._skill_browser(),
                     ],
+                    id='workspace-main',
                     className='page-main',
                 ),
-                dbc.Modal(
+            ],
+            id='mosaic-root',
+            **{'data-backend-url': self._configuration.backend_url},
+        )
+
+    def _skill_browser(self) -> html.Section:
+        """
+        Build the paged Skill browser and persistent selection panel.
+
+        :return: Skills view for signed-in workspace users.
+        """
+        return html.Section(
+            [
+                html.H1('Skills'),
+                html.P(
+                    'Choose the Skills available to your workspace. Changes apply to the next Goal.',
+                    className='browser-description',
+                ),
+                html.Div(
                     [
-                        dbc.ModalHeader(
-                            dbc.ModalTitle('Manage Skills'),
-                            close_button=False,
-                        ),
-                        dbc.ModalBody(
+                        html.Div(
                             [
-                                html.P(
-                                    'Choose the Skills to use in your workspace. Changes apply to the next Goal.',
-                                    className='text-muted',
-                                ),
                                 html.Label(
                                     'Search Skills',
                                     htmlFor='skill-search',
-                                    className='form-label',
+                                    className='visually-hidden',
                                 ),
                                 dcc.Input(
                                     id='skill-search',
                                     type='search',
                                     value='',
-                                    className='form-control mb-3',
+                                    maxLength=200,
+                                    placeholder='Search Skills',
+                                    className='form-control form-control-sm',
                                 ),
-                                dbc.Alert(
-                                    id='skill-editor-alert',
-                                    color='warning',
-                                    is_open=False,
+                                html.Div(
+                                    id='skill-browser-path', className='browser-path'
                                 ),
-                                html.Div(id='skill-options', className='skill-options'),
                             ],
+                            className='browser-toolbar',
                         ),
-                        dbc.ModalFooter(
+                        dbc.Alert(
+                            id='skill-editor-alert',
+                            color='warning',
+                            is_open=False,
+                            className='m-2',
+                        ),
+                        html.Div(
                             [
+                                html.Div(
+                                    id='skill-browser-columns',
+                                    className='browser-columns',
+                                ),
+                                html.Aside(
+                                    [
+                                        html.H2(
+                                            'Current Skills',
+                                            id='current-skills-heading',
+                                        ),
+                                        html.Div(
+                                            id='current-skills',
+                                            className='browser-list',
+                                        ),
+                                    ],
+                                    className='browser-column selected-panel',
+                                    **{'aria-labelledby': 'current-skills-heading'},
+                                ),
+                            ],
+                            className='browser-content',
+                        ),
+                        html.Div(
+                            [
+                                html.Strong(id='skill-selection-count', role='status'),
                                 html.Span(
-                                    id='skill-selection-count',
-                                    className='me-auto text-muted',
+                                    id='skill-save-status',
+                                    className='browser-status me-auto',
                                     role='status',
                                 ),
                                 dbc.Button(
-                                    'Cancel', id='cancel-skills', color='secondary'
+                                    'Discard changes',
+                                    id='cancel-skills',
+                                    color='link',
+                                    size='sm',
                                 ),
                                 dbc.Button(
-                                    'Save Skills', id='save-skills', color='primary'
+                                    'Save Skills',
+                                    id='save-skills',
+                                    color='primary',
+                                    size='sm',
                                 ),
                             ],
+                            className='browser-footer',
                         ),
                     ],
-                    id='skill-editor',
-                    is_open=False,
-                    backdrop='static',
-                    keyboard=False,
-                    scrollable=True,
+                    className='skill-browser',
                 ),
             ],
-            id='mosaic-root',
-            **{'data-backend-url': self._configuration.backend_url},
+            id='skill-editor',
+            className='skill-browser-screen',
+            style={'display': 'none'},
         )
