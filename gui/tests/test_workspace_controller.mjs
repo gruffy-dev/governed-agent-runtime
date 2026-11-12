@@ -45,8 +45,14 @@ class TestWorkspaceController {
                         next_offset: end < state.catalogue.length ? end : null,
                     });
                 }
-                if (params.has("function")) return Response.json({items: state.catalogue, next_offset: null});
-                if (params.has("domain")) return Response.json({items: ["function"], next_offset: null});
+                if (params.has("function")) {
+                    const functionName = params.get("function");
+                    const items = state.functions
+                        ? state.catalogue.filter(skill => skill.groups.includes("example/" + functionName))
+                        : state.catalogue;
+                    return Response.json({items, next_offset: null});
+                }
+                if (params.has("domain")) return Response.json({items: state.functions || ["function"], next_offset: null});
                 return Response.json(params.has("offset") ?
                     {items: ["second-domain"], next_offset: null} : {items: ["example"], next_offset: 1});
             }
@@ -88,7 +94,7 @@ class TestWorkspaceController {
     static run() {
         test("Function checkbox selects all pages, tracks partial selection, and waits for Save Skills", async () => {
             const catalogue = ["alpha", "beta", "gamma"].map(skill_id => ({
-                skill_id, display_name: skill_id.toUpperCase(), description: "Synthetic Skill", groups: [],
+                skill_id, display_name: skill_id.toUpperCase(), description: "Synthetic Skill", groups: ["example/function"],
             }));
             const fixture = this.setup({catalogue, skills: [catalogue[0]], functionPageSize: 1, failFunctionOffset: 2});
             const {state, element, click, requests} = fixture;
@@ -103,34 +109,63 @@ class TestWorkspaceController {
                 await this.settle();
                 click("skill-path-domains-0");
                 await this.settle();
+                assert.equal(checked(), "mixed");
                 click("skill-path-functions-0");
                 await this.settle();
                 assert.equal(checked(), "mixed");
-                click("skill-function-toggle");
+                click("skill-function-toggle-0");
                 await this.settle();
                 assert.equal(element("skill-editor-alert").is_open, true);
                 assert.equal(element("skill-selection-count").children, "1 selected");
                 state.failFunctionOffset = null;
-                click("skill-function-toggle");
+                click("skill-function-toggle-0");
                 await this.settle();
                 assert.equal(element("skill-selection-count").children, "3 selected");
                 assert.equal(checked(), "true");
                 click("skill-option-1");
                 assert.equal(checked(), "mixed");
-                click("skill-function-toggle");
+                click("skill-function-toggle-0");
                 await this.settle();
                 assert.equal(checked(), "true");
-                click("skill-function-toggle");
+                click("skill-function-toggle-0");
                 await this.settle();
                 assert.equal(checked(), "false");
                 assert.equal(element("skill-selection-count").children, "0 selected");
-                click("skill-function-toggle");
+                click("skill-function-toggle-0");
                 await this.settle();
                 assert.equal(element("skill-save-status").children, "Unsaved changes");
                 assert.equal(requests.some(request => request.options.method === "POST"), false);
                 click("save-skills");
                 await this.settle();
                 assert.deepEqual(state.skills.map(skill => skill.skill_id), ["alpha", "beta", "gamma"]);
+            } finally {fixture.restore();}
+        });
+        test("Closed functions show selection state and can be toggled without opening them", async () => {
+            const catalogue = ["planning", "delivery"].map(skill_id => ({
+                skill_id, display_name: skill_id, description: "Synthetic Skill", groups: ["example/" + skill_id],
+            }));
+            const fixture = this.setup({catalogue, skills: [catalogue[0]], functions: ["planning", "delivery"]});
+            const {element, click} = fixture;
+            const states = () => element("skill-browser-columns").children[1].props.children[1].props.children
+                .map(row => row.props.children[0].props["aria-checked"]);
+            try {
+                await this.settle();
+                click("show-skill-browser");
+                await this.settle();
+                click("skill-path-domains-0");
+                await this.settle();
+                assert.deepEqual(states(), ["true", "false"]);
+                click("skill-path-functions-0");
+                await this.settle();
+                click("skill-function-toggle-1");
+                await this.settle();
+                assert.deepEqual(states(), ["true", "true"]);
+                assert.equal(element("skill-selection-count").children, "2 selected");
+                assert.doesNotMatch(JSON.stringify(element("skill-browser-columns").children[2]), /Select delivery/);
+                click("skill-function-toggle-1");
+                await this.settle();
+                assert.deepEqual(states(), ["true", "false"]);
+                assert.equal(element("skill-selection-count").children, "1 selected");
             } finally {fixture.restore();}
         });
         test("Withdrawn Skills appear only in Current Skills and can be removed", async () => {

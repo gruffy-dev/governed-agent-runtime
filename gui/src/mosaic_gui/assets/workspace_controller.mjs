@@ -435,6 +435,7 @@ export class WorkspaceController {
             selected: new Map(), saved: new Set(), version: null, ready: false,
             domain: null, function: null, query: "", level: "domains", timer: null,
             pages: {}, request: null, loading: null, bulk: null,
+            functionMembers: new Map(), functionChecks: new AbortController(), checkingFunctions: new Set(),
         };
         this.#skillEditor = editor;
         this.#renderSkillBrowser();
@@ -497,7 +498,11 @@ export class WorkspaceController {
         } finally {
             if (!request.signal.aborted && this.#skillEditor === editor) {
                 editor.loading = null;
+                if (level === "skills" && editor.pages.skills?.next_offset === null) {
+                    editor.functionMembers.set(this.#functionKey(editor.domain, editor.function), editor.pages.skills.items);
+                }
                 this.#renderSkillBrowser();
+                this.#checkFunctionSelections();
             }
         }
     }
@@ -533,43 +538,96 @@ export class WorkspaceController {
         const label = group.replaceAll("-", " ");
         return label.charAt(0).toUpperCase() + label.slice(1);
     }
-    async #toggleFunctionSkills() {
+    #functionKey(domain, name) {
+        return domain + "/" + name;
+    }
+    #selectedInFunction(editor, name) {
+        const domain = editor.domain;
+        const path = this.#functionKey(domain, name);
+        return [...editor.selected.values()].some(skill => {
+            if (skill.withdrawn) return false;
+            if (name !== "~") return skill.groups.includes(path);
+            if (domain === "~") return skill.groups.length === 0;
+            // The catalogue puts domain-only members under General.
+            return skill.groups.includes(domain) && !skill.groups.some(group => group.startsWith(domain + "/"));
+        });
+    }
+    #functionSkillState(editor, name) {
+        const members = editor.functionMembers.get(this.#functionKey(editor.domain, name));
+        if (!members) return this.#selectedInFunction(editor, name) ? "mixed" : "false";
+        const selected = members.filter(skill => editor.selected.has(skill.skill_id)).length;
+        if (!selected) return "false";
+        return selected === members.length ? "true" : "mixed";
+    }
+    async #fetchFunctionSkills(domain, name, signal, page) {
+        const params = new URLSearchParams({domain, function: name});
+        const candidates = new Map(page?.items.map(skill => [skill.skill_id, skill]));
+        let offset = page ? page.next_offset : 0;
+        while (offset != null) {
+            params.set("offset", offset);
+            const next = await this.#client.request("/api/v1/skills/catalogue?" + params, {signal});
+            if (signal.aborted) return [];
+            for (const skill of next.items) candidates.set(skill.skill_id, skill);
+            if (next.next_offset != null && next.next_offset <= offset) {
+                throw new Error("Could not load all Skills in this function. Try again.");
+            }
+            offset = next.next_offset;
+        }
+        return [...candidates.values()];
+    }
+    #checkFunctionSelections() {
+        const editor = this.#skillEditor;
+        if (!editor?.ready || editor.query || !editor.domain) return;
+        const domain = editor.domain;
+        const signal = editor.functionChecks.signal;
+        for (const name of editor.pages.functions?.items || []) {
+            const key = this.#functionKey(domain, name);
+            if (editor.functionMembers.has(key) || editor.checkingFunctions.has(key) || !this.#selectedInFunction(editor, name)) continue;
+            editor.checkingFunctions.add(key);
+            const page = name === editor.function ? editor.pages.skills : undefined;
+            this.#fetchFunctionSkills(domain, name, signal, page).then(members => {
+                if (signal.aborted || editor.functionMembers.has(key)) return;
+                editor.functionMembers.set(key, members);
+                if (editor.domain === domain && !editor.query) this.#renderSkillBrowser();
+            }).catch(() => {
+                // The checkbox can retry explicitly and report errors through the editor.
+            }).finally(() => editor.checkingFunctions.delete(key));
+        }
+    }
+    async #toggleFunctionSkills(name) {
         /**
-         * Select or clear all published Skills in the current function.
+         * Select or clear all published Skills in the requested function.
+         * :param name: Function in the current domain, whether open or closed.
          */
         const editor = this.#skillEditor;
-        const page = editor?.pages.skills;
         if (this.#busy || !editor?.ready || editor.version === null || editor.query ||
-            !editor.function || editor.loading || editor.bulk || !page?.items.length) return;
+            !editor.domain || name == null || editor.loading === "functions" || editor.bulk) return;
 
-        const clearSelection = this.#functionSkillState(editor) === "true";
-        const bulk = new AbortController();
+        const domain = editor.domain;
+        const key = this.#functionKey(domain, name);
+        const clearSelection = this.#functionSkillState(editor, name) === "true";
+        const bulk = {request: new AbortController(), name};
         editor.bulk = bulk;
         this.#props("skill-editor-alert", {is_open: false});
         this.#renderSkillBrowser();
-        const params = new URLSearchParams({domain: editor.domain, function: editor.function});
-        const candidates = new Map(page.items.map(skill => [skill.skill_id, skill]));
         try {
-            let offset = page.next_offset;
-            while (offset != null) {
-                params.set("offset", offset);
-                const next = await this.#client.request("/api/v1/skills/catalogue?" + params, {signal: bulk.signal});
-                if (editor.bulk !== bulk) return;
-                for (const skill of next.items) candidates.set(skill.skill_id, skill);
-                if (next.next_offset != null && next.next_offset <= offset) {
-                    throw new Error("Could not load all Skills in this function. Try again.");
-                }
-                offset = next.next_offset;
+            const page = name === editor.function ? editor.pages.skills : undefined;
+            const members = editor.functionMembers.get(key) ??
+                await this.#fetchFunctionSkills(domain, name, bulk.request.signal, page);
+            if (editor.bulk !== bulk) return;
+            for (const skill of members) {
+                if (clearSelection) editor.selected.delete(skill.skill_id);
+                else editor.selected.set(skill.skill_id, skill);
             }
-            for (const [id, skill] of candidates) {
-                if (clearSelection) editor.selected.delete(id);
-                else editor.selected.set(id, skill);
+            editor.functionMembers.set(key, members);
+            if (name === editor.function && editor.loading !== "skills") {
+                editor.pages.skills = {items: members, next_offset: null};
             }
-            editor.pages.skills = {items: [...candidates.values()], next_offset: null};
             this.#cancelSkillBulk();
             this.#renderSkillBrowser();
             this.#renderCurrentSkills();
             this.#controls();
+            this.#checkFunctionSelections();
         } catch (error) {
             if (editor.bulk !== bulk) return;
             this.#cancelSkillBulk();
@@ -583,20 +641,8 @@ export class WorkspaceController {
          */
         const editor = this.#skillEditor;
         if (!editor?.bulk) return;
-        editor.bulk.abort();
+        editor.bulk.request.abort();
         editor.bulk = null;
-    }
-    #functionSkillState(editor) {
-        /**
-         * Describe how many Skills in the loaded function are selected.
-         * :param editor: Current Skills editor state.
-         *
-         * :return: Checked state for the function checkbox.
-         */
-        const page = editor.pages.skills;
-        if (!page?.items.some(skill => editor.selected.has(skill.skill_id))) return "false";
-        return page.next_offset == null && page.items.every(skill => editor.selected.has(skill.skill_id))
-            ? "true" : "mixed";
     }
     #renderSkillBrowser() {
         /**
@@ -616,16 +662,14 @@ export class WorkspaceController {
         this.#props("skill-browser-path", {children: editor.query ? "Across all domains" : path});
         const levels = editor.query ? [["search", "Search results"]] :
             [["domains", "Domain"], ["functions", "Function"], ["skills", "Skill"]];
-        const functionCheckbox = editor.function && editor.version !== null && editor.pages.skills?.items.length
-            ? {
-                type: "button", role: "checkbox", className: "skill-option",
-                "aria-checked": this.#functionSkillState(editor),
-                "aria-label": "All available Skills in " + this.#skillGroupLabel(editor.function, "General"),
-                "aria-disabled": Boolean(editor.loading || editor.bulk),
-                "aria-busy": Boolean(editor.bulk),
-                title: "Select or clear all available Skills in this function",
-            }
-            : null;
+        const functionCheckbox = name => ({
+            type: "button", role: "checkbox", className: "skill-option",
+            "aria-checked": this.#functionSkillState(editor, name),
+            "aria-label": "All available Skills in " + this.#skillGroupLabel(name, "General"),
+            "aria-disabled": Boolean(editor.version === null || editor.loading === "functions" || editor.bulk),
+            "aria-busy": editor.bulk?.name === name,
+            title: "Select or clear all available Skills in this function",
+        });
         const columns = levels.map(([level, title]) => {
             const page = editor.pages[level];
             const items = (page?.items || []).map((item, index) => {
@@ -647,11 +691,11 @@ export class WorkspaceController {
                     "aria-pressed": String(active),
                     children: [this.#skillGroupLabel(item, level === "domains" ? "Ungrouped" : "General"), this.#element("Span", {"aria-hidden": "true", children: "›"})],
                 });
-                if (level !== "functions" || !active || !functionCheckbox) return pathButton;
+                if (level !== "functions") return pathButton;
                 return this.#element("Div", {
                     className: "skill-function-row",
                     children: [
-                        this.#element("Button", {id: "skill-function-toggle", ...functionCheckbox}),
+                        this.#element("Button", {id: "skill-function-toggle-" + index, ...functionCheckbox(item)}),
                         pathButton,
                     ],
                 });
@@ -673,10 +717,10 @@ export class WorkspaceController {
             if (level === "skills" && editor.bulk) items.unshift(this.#element("P", {
                 className: "browser-empty", role: "status", children: "Loading all Skills in this function…",
             }));
-            if (level === "skills" && functionCheckbox) items.unshift(this.#element("Div", {
+            if (level === "skills" && editor.function) items.unshift(this.#element("Div", {
                 className: "skill-function-row skill-function-mobile",
                 children: [
-                    this.#element("Button", {id: "skill-function-toggle-mobile", ...functionCheckbox}),
+                    this.#element("Button", {id: "skill-function-toggle-mobile", ...functionCheckbox(editor.function)}),
                     this.#element("Span", {children: this.#skillGroupLabel(editor.function, "General")}),
                 ],
             }));
@@ -838,8 +882,9 @@ export class WorkspaceController {
                 editor.level = "skills";
             }
             this.#loadSkillPage(editor.level);
-        } else if (id === "skill-function-toggle" || id === "skill-function-toggle-mobile") {
-            this.#toggleFunctionSkills();
+        } else if (action === "function" && level === "toggle") {
+            const name = index === "mobile" ? editor.function : editor.pages.functions?.items[Number(index)];
+            this.#toggleFunctionSkills(name);
         } else if (!this.#busy && (action === "option" || action === "remove")) {
             const page = editor.pages[editor.query ? "search" : "skills"];
             const skill = action === "remove"
@@ -848,7 +893,7 @@ export class WorkspaceController {
             if (!skill) return;
             if (editor.selected.has(skill.skill_id)) editor.selected.delete(skill.skill_id);
             else editor.selected.set(skill.skill_id, skill);
-            if (editor.bulk || (!editor.query && editor.pages.skills?.items.length)) {
+            if (editor.bulk || (!editor.query && editor.pages.functions?.items.length)) {
                 this.#cancelSkillBulk();
                 this.#renderSkillBrowser();
             }
@@ -856,6 +901,7 @@ export class WorkspaceController {
             if (position >= 0) this.#props("skill-option-" + position, {"aria-pressed": String(editor.selected.has(skill.skill_id))});
             this.#renderCurrentSkills();
             this.#controls();
+            this.#checkFunctionSelections();
         }
     }
     #discardSkillChanges() {
@@ -870,6 +916,7 @@ export class WorkspaceController {
         this.#renderSkillBrowser();
         this.#renderCurrentSkills();
         this.#controls();
+        this.#checkFunctionSelections();
     }
     async #saveSkillSelection() {
         /**
@@ -929,7 +976,9 @@ export class WorkspaceController {
                 if (latest) editor.selected.set(id, latest);
                 else if (skill.withdrawn) editor.selected.delete(id);
             }
+            this.#renderSkillBrowser();
             this.#renderCurrentSkills();
+            this.#checkFunctionSelections();
             const saved = editor.savedSkills.map(skill => skill.display_name + (skill.withdrawn ? " (withdrawn)" : "")).join(", ") || "None";
             const message = workspace.version === null
                 ? "This workspace is no longer available. Cancel and contact your administrator."
@@ -953,6 +1002,7 @@ export class WorkspaceController {
          */
         clearTimeout(this.#skillEditor?.timer);
         this.#skillEditor?.request?.abort();
+        this.#skillEditor?.functionChecks.abort();
         this.#cancelSkillBulk();
         this.#skillEditor = null;
         this.#props("skill-editor", {style: {display: "none"}});
