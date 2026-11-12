@@ -191,6 +191,8 @@ class TestGuiApplication(unittest.TestCase):
         self.assertIn('dash_bootstrap_components', str(layout))
         self.assertNotIn('plaintext_token', str(layout))
         self.assertIn('current-skills.children', application.callback_map)
+        self.assertIn('conversation-list.children', application.callback_map)
+        self.assertIn('conversation-action-result.data', application.callback_map)
         self.assertIn('skills-list.children', application.callback_map)
         self.assertIn('skill-action-result.data', application.callback_map)
         for asset in (

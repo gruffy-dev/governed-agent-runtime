@@ -64,7 +64,7 @@ class TestWorkspaceController {
                 if (state.failCreation) return failure();
                 return Response.json(detail, {status: 201});
             }
-            if (path === "/api/v1/conversations") return Response.json({conversations: []});
+            if (path === "/api/v1/conversations") return Response.json({conversations: state.conversations || []});
             if (path.endsWith("/messages")) return new Response(state.manualStream ? state.manualStream(options.signal) : state.failStream ? 'data: {"error":"private synthetic diagnostic"}\n\n' : 'data: {"content":{"role":"model","parts":[{"text":"Synthetic answer"}]},"partial":false}\n\n', {headers: {"Content-Type": "text/event-stream", ...(state.correlationId ? {"X-Correlation-ID": state.correlationId} : {})}});
             if (path === "/api/v1/conversations/synthetic-chat") return Response.json(detail);
             throw new Error("Unexpected synthetic request: " + path);
@@ -75,6 +75,10 @@ class TestWorkspaceController {
             click: id => {
                 if (id.startsWith("skill-") || ["show-chat", "show-skill-browser", "save-skills", "cancel-skills"].includes(id)) {
                     if (!element(id).disabled) window.mosaicSkillAction(id);
+                } else if (id === "new-conversation") {
+                    if (!element(id).disabled) window.mosaicConversationAction();
+                } else if (id.startsWith("conversation-")) {
+                    window.mosaicConversationAction(id.slice("conversation-".length));
                 } else {
                     listeners.get("click")({target: {closest: () => element(id)}});
                 }
@@ -269,6 +273,30 @@ class TestWorkspaceController {
                 await this.settle();
                 assert.deepEqual(state.skills, [alpha]);
                 assert.equal(state.version, 3);
+            } finally {fixture.restore();}
+        });
+        test("Sidebar navigation publishes row IDs separately from private titles", async () => {
+            const fixture = this.setup({conversations: [{
+                conversation_id: "synthetic-chat",
+                title: "Private conversation title",
+                last_activity_at: "2026-11-12T10:30:00Z",
+                is_interrupted: true,
+            }]});
+            try {
+                await this.settle();
+                assert.deepEqual(fixture.element("conversation-row-ids").data, ["synthetic-chat"]);
+                const sidebar = fixture.element("conversation-sidebar-view");
+                assert.equal(sidebar.data.conversations[0].title, "Private conversation title");
+                assert.equal(sidebar.data.active, null);
+                fixture.click("conversation-unknown");
+                assert.equal(fixture.requests.some(request => request.url.endsWith("/unknown")), false);
+                fixture.click("conversation-synthetic-chat");
+                await this.settle();
+                assert.equal(sidebar.data.active, "synthetic-chat");
+                fixture.click("new-conversation");
+                await this.settle();
+                assert.equal(sidebar.data.active, null);
+                assert.equal(fixture.creations().length, 0);
             } finally {fixture.restore();}
         });
         test("login, blank sends and New conversation do not create sessions; first send creates once", async () => {

@@ -149,8 +149,9 @@ Bootstrap 5.3.8 CSS and the tangram are served locally. No CDN is needed.
 Sign-in checks the cookie and always opens an unsaved blank chat. A conversation
 is created on the first non-empty message, not on login, refresh or clicking
 New conversation. Existing empty conversations are retained; no history is deleted.
-History remains
-available in the sidebar. Skills are grouped by the most-specific available
+Dash builds the sidebar rows from conversation IDs. A browser callback fills
+in titles and dates from the API response. Titles and message text stay in the
+browser. Skills are grouped by the most-specific available
 catalogue path and listed once. The Chat Skills panel starts collapsed. Open
 the **Skills** tab to browse by domain and function or search the published
 catalogue. Results load from the backend in pages. Python Dash callbacks render

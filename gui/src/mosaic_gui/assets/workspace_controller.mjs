@@ -28,6 +28,10 @@ export class WorkspaceController {
         input.setAttribute("aria-describedby", "sign-in-error");
         document.getElementById("token-input-slot").append(input);
         document.addEventListener("click", event => this.#click(event));
+        window.mosaicConversationAction = id => {
+            if (id === undefined) this.#newConversation();
+            else if (this.#conversations.some(conversation => conversation.id === id)) this.#loadConversation(id);
+        };
         window.mosaicSkillAction = (id, value) => this.#skillControl(id, value);
         document.addEventListener("keydown", event => this.#key(event));
         document.getElementById("sign-in-form").addEventListener("submit", event => {event.preventDefault(); this.#signIn();});
@@ -165,10 +169,12 @@ export class WorkspaceController {
         this.#props("workspace-navigation", {style: {display: "none"}});
         this.#props("workspace-main", {className: "page-main"});
         this.#conversations = this.#messages = [];
+        this.#props("conversation-row-ids", {data: []});
+        this.#props("conversation-sidebar-view", {data: null});
         this.#streamController = this.#operation = null;
         document.getElementById("pilot-token").value = "";
         this.#props("message-input", {value: ""});
-        for (const id of ["user-label", "messages", "conversation-list", "skill-count"]) this.#props(id, {children: ""});
+        for (const id of ["user-label", "messages", "skill-count"]) this.#props(id, {children: ""});
         this.#props("workspace-alert", {is_open: false});
         this.#props("sign-out", {style: {display: "none"}});
         this.#props("workspace-screen", {style: {display: "none"}});
@@ -219,7 +225,6 @@ export class WorkspaceController {
         this.#props("conversation-title", {children: detail?.title || "New conversation"});
         this.#props("workspace-alert", {is_open: detail?.can_continue === false, color: "warning", children: detail?.is_interrupted ? "Interrupted — this conversation cannot continue. Saved history is available. Start a new conversation." : "This conversation is unavailable while an invocation is active. Start a new conversation or reopen it later."});
         this.#renderMessages();
-        this.#renderHistory();
         this.#controls();
     }
     async #submit() {
@@ -365,20 +370,27 @@ export class WorkspaceController {
          */
         const result = await this.#client.request("/api/v1/conversations");
         if (epoch !== this.#epoch) return;
-        this.#conversations = result.conversations.sort((left, right) => right.last_activity_at.localeCompare(left.last_activity_at));
-        this.#renderHistory();
+        this.#conversations = result.conversations
+            .sort((left, right) => right.last_activity_at.localeCompare(left.last_activity_at))
+            .map(conversation => ({
+                id: conversation.conversation_id,
+                title: conversation.title,
+                lastActivity: conversation.last_activity_at,
+                interrupted: conversation.is_interrupted,
+            }));
+        this.#publishSidebarView();
+        this.#props("conversation-row-ids", {data: this.#conversations.map(conversation => conversation.id)});
     }
-    #renderHistory() {
+    #publishSidebarView() {
         /**
-         * Render a compact Bootstrap history list with visible interrupted labels.
+         * Provide conversation display data to Dash's browser callback.
          */
-        const children = this.#conversations.map(conversation => this.#element("Button", {
-            id: "conversation-" + conversation.conversation_id,
-            className: "history-item" + (conversation.conversation_id === this.#conversation?.conversation_id ? " active" : ""),
-            color: "link", disabled: this.#busy || Boolean(this.#streamController),
-            children: [this.#element("Span", {className: "history-title", children: conversation.title || "New conversation"}), this.#element("Span", {className: "history-meta", children: [new Date(conversation.last_activity_at).toLocaleDateString(undefined, {month: "short", day: "numeric"}), ...(conversation.is_interrupted ? [this.#element("Span", {className: "interrupted-label", children: "Interrupted"})] : [])]})],
-        }, "dash_bootstrap_components"));
-        this.#props("conversation-list", {children});
+        if (!this.#signedIn) return;
+        this.#props("conversation-sidebar-view", {data: {
+            conversations: this.#conversations,
+            active: this.#conversation?.conversation_id ?? null,
+            disabled: this.#busy || Boolean(this.#streamController),
+        }});
     }
     #renderMessages() {
         /**
@@ -867,7 +879,7 @@ export class WorkspaceController {
         this.#props("message-input", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
         this.#props("stop-stream", {style: {display: streaming ? "inline-block" : "none"}});
         this.#props("conversation-state", {children: streaming ? "Responding" : this.#conversation?.is_interrupted ? "Interrupted" : this.#conversation?.can_continue === false ? "Unavailable" : "Ready", color: streaming ? "secondary" : this.#conversation?.can_continue === false ? "warning" : "success"});
-        this.#renderHistory();
+        this.#publishSidebarView();
     }
     #failure(error) {
         /**
@@ -897,7 +909,7 @@ export class WorkspaceController {
     }
     #click(event) {
         /**
-         * Delegate Bootstrap button actions, including dynamically rendered history.
+         * Handle browser controls for authentication, streaming and the Skills panel.
          * :param event: Browser click event.
          */
         const button = event.target.closest("button");
@@ -905,12 +917,9 @@ export class WorkspaceController {
         const id = button.id;
         if (id === "sign-in") this.#signIn();
         else if (id === "sign-out") this.#signOut();
-        else if (id === "new-conversation") this.#newConversation();
         else if (id === "send-message") this.#submit();
         else if (id === "stop-stream") this.#streamController?.abort();
-        else if (id === "history-toggle" || id === "history-show") this.#toggle("history");
         else if (id === "skills-toggle" || id === "skills-show") this.#toggle("skills");
-        else if (id.startsWith("conversation-")) this.#loadConversation(id.slice(13));
     }
     #skillControl(id, value) {
         /**
