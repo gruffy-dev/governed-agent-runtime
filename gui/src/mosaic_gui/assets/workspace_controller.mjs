@@ -33,6 +33,10 @@ export class WorkspaceController {
             else if (this.#conversations.some(conversation => conversation.id === id)) this.#loadConversation(id);
         };
         window.mosaicSkillAction = (id, value) => this.#skillControl(id, value);
+        window.mosaicComposerAction = (id, prompt) => {
+            if (id === "send-message") this.#submit(prompt);
+            else if (id === "stop-stream") this.#streamController?.abort();
+        };
         document.addEventListener("keydown", event => this.#key(event));
         document.getElementById("sign-in-form").addEventListener("submit", event => {event.preventDefault(); this.#signIn();});
         for (const side of ["history", "skills"]) this.#resize(side);
@@ -227,13 +231,13 @@ export class WorkspaceController {
         this.#renderMessages();
         this.#controls();
     }
-    async #submit() {
+    async #submit(prompt) {
         /**
          * Save a blank chat on its first send, then stream text without automatic retry.
+         * :param prompt: Text held in the browser's Dash composer.
          */
         if (this.#busy || this.#streamController || !this.#signedIn || this.#conversation?.can_continue === false) return;
-        const input = document.getElementById("message-input");
-        const text = input.value.trim();
+        const text = (prompt || "").trim();
         if (!text) return;
         const epoch = this.#epoch;
         if (!this.#conversation) {
@@ -909,7 +913,7 @@ export class WorkspaceController {
     }
     #click(event) {
         /**
-         * Handle browser controls for authentication, streaming and the Skills panel.
+         * Handle browser controls for authentication and the Skills panel.
          * :param event: Browser click event.
          */
         const button = event.target.closest("button");
@@ -917,8 +921,6 @@ export class WorkspaceController {
         const id = button.id;
         if (id === "sign-in") this.#signIn();
         else if (id === "sign-out") this.#signOut();
-        else if (id === "send-message") this.#submit();
-        else if (id === "stop-stream") this.#streamController?.abort();
         else if (id === "skills-toggle" || id === "skills-show") this.#toggle("skills");
     }
     #skillControl(id, value) {
@@ -941,7 +943,10 @@ export class WorkspaceController {
          * :param event: Browser keyboard event.
          */
         if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-        if (event.target.id === "message-input") {event.preventDefault(); this.#submit();}
+        if (event.target.id === "message-input") {
+            event.preventDefault();
+            document.getElementById("send-message").click();
+        }
         else if (event.target.id === "pilot-token") {event.preventDefault(); this.#signIn();}
     }
     #toggle(side) {

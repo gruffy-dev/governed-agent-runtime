@@ -193,6 +193,7 @@ class TestGuiApplication(unittest.TestCase):
         self.assertIn('current-skills.children', application.callback_map)
         self.assertIn('conversation-list.children', application.callback_map)
         self.assertIn('conversation-action-result.data', application.callback_map)
+        self.assertNotIn('callback', application.callback_map['composer-action-result.data'])
         self.assertIn('skills-list.children', application.callback_map)
         self.assertIn('skill-action-result.data', application.callback_map)
         for asset in (

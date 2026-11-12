@@ -77,6 +77,8 @@ class TestWorkspaceController {
                     if (!element(id).disabled) window.mosaicSkillAction(id);
                 } else if (id === "new-conversation") {
                     if (!element(id).disabled) window.mosaicConversationAction();
+                } else if (id === "send-message" || id === "stop-stream") {
+                    if (!element(id).disabled) window.mosaicComposerAction(id, element("message-input").value);
                 } else if (id.startsWith("conversation-")) {
                     window.mosaicConversationAction(id.slice("conversation-".length));
                 } else {

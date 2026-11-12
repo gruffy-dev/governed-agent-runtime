@@ -427,6 +427,7 @@ class GuiLayout:
                 dcc.Store(id='conversation-row-ids', storage_type='memory'),
                 dcc.Store(id='conversation-sidebar-view', storage_type='memory'),
                 dcc.Store(id='conversation-action-result', storage_type='memory'),
+                dcc.Store(id='composer-action-result', storage_type='memory'),
                 dcc.Store(id='skill-catalogue-view', storage_type='memory'),
                 dcc.Store(id='skill-selection-view', storage_type='memory'),
                 dcc.Store(id='saved-skill-view', storage_type='memory'),

@@ -3,6 +3,7 @@ from pathlib import Path
 from dash import Dash
 from flask import Response, send_file
 
+from .chat_composer import register_chat_composer
 from .conversation_sidebar import register_conversation_sidebar
 from .gui_configuration import GuiConfiguration
 from .gui_layout import GuiLayout
@@ -30,6 +31,7 @@ class GuiApplication:
         application.layout = GuiLayout(configuration).create_layout()
         register_skill_callbacks(application)
         register_conversation_sidebar(application)
+        register_chat_composer(application)
         application.index_string = """<!DOCTYPE html>
 <html><head>{%metas%}<title>{%title%}</title>
 <link rel="icon" type="image/svg+xml" href="/assets/tangram.svg">{%css%}</head>
