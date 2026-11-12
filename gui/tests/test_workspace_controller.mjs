@@ -4,12 +4,11 @@ import {WorkspaceController} from "../src/mosaic_gui/assets/workspace_controller
 
 class TestWorkspaceController {
     static setup(initialState = {}) {
-        const originals = Object.fromEntries(["document", "window", "fetch", "requestAnimationFrame", "setInterval", "clearInterval", "setTimeout", "clearTimeout", "performance"].map(key => [key, globalThis[key]]));
+        const originals = Object.fromEntries(["document", "window", "fetch", "requestAnimationFrame", "setInterval", "clearInterval", "performance"].map(key => [key, globalThis[key]]));
         const elements = new Map();
         const listeners = new Map();
         const requests = [];
         const timers = new Map();
-        const timeouts = new Map();
         const element = id => {
             if (!elements.has(id)) elements.set(id, {id, value: "", disabled: false, dataset: {}, scrollHeight: 0, scrollTop: 0, clientHeight: 100,
                 setAttribute() {}, append() {}, addEventListener() {}, querySelectorAll: () => []});
@@ -24,8 +23,6 @@ class TestWorkspaceController {
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
         globalThis.clearInterval = id => timers.delete(id);
-        globalThis.setTimeout = callback => {const id = {}; timeouts.set(id, callback); return id;};
-        globalThis.clearTimeout = id => timeouts.delete(id);
         globalThis.fetch = async (url, options) => {
             requests.push({url, options});
             const path = new URL(url).pathname;
@@ -75,11 +72,14 @@ class TestWorkspaceController {
         new WorkspaceController({dataset: {backendUrl: "https://api.example.com"}});
         return {element, requests, state, timers,
             tick: milliseconds => {state.now += milliseconds; for (const callback of timers.values()) callback();},
-            click: id => listeners.get("click")({target: {closest: () => element(id)}}),
-            input: (id, value) => {
-                listeners.get("input")({target: Object.assign(element(id), {value})});
-                for (const [timer, callback] of timeouts) {timeouts.delete(timer); callback();}
+            click: id => {
+                if (id.startsWith("skill-") || ["show-chat", "show-skill-browser", "save-skills", "cancel-skills"].includes(id)) {
+                    if (!element(id).disabled) window.mosaicSkillAction(id);
+                } else {
+                    listeners.get("click")({target: {closest: () => element(id)}});
+                }
             },
+            input: (id, value) => window.mosaicSkillAction(id, value),
             creations: () => requests.filter(request => new URL(request.url).pathname === "/api/v1/conversations" && request.options.method === "POST"),
             restore: () => {
                 for (const [key, value] of Object.entries(originals)) {
@@ -98,40 +98,36 @@ class TestWorkspaceController {
             }));
             const fixture = this.setup({catalogue, skills: [catalogue[0]], functionPageSize: 1, failFunctionOffset: 2});
             const {state, element, click, requests} = fixture;
-            const checked = () => {
-                const functionColumn = element("skill-browser-columns").children[1];
-                const functionRow = functionColumn.props.children[1].props.children[0];
-                return functionRow.props.children[0].props["aria-checked"];
-            };
+            const checked = () => element("skill-catalogue-view").data.function_states.function;
             try {
                 await this.settle();
                 click("show-skill-browser");
                 await this.settle();
-                click("skill-path-domains-0");
+                click("skill-path-domains-example");
                 await this.settle();
                 assert.equal(checked(), "mixed");
-                click("skill-path-functions-0");
+                click("skill-path-functions-function");
                 await this.settle();
                 assert.equal(checked(), "mixed");
-                click("skill-function-toggle-0");
+                click("skill-function-toggle-function");
                 await this.settle();
                 assert.equal(element("skill-editor-alert").is_open, true);
                 assert.equal(element("skill-selection-count").children, "1 selected");
                 state.failFunctionOffset = null;
-                click("skill-function-toggle-0");
+                click("skill-function-toggle-function");
                 await this.settle();
                 assert.equal(element("skill-selection-count").children, "3 selected");
                 assert.equal(checked(), "true");
-                click("skill-option-1");
+                click("skill-option-beta");
                 assert.equal(checked(), "mixed");
-                click("skill-function-toggle-0");
+                click("skill-function-toggle-function");
                 await this.settle();
                 assert.equal(checked(), "true");
-                click("skill-function-toggle-0");
+                click("skill-function-toggle-function");
                 await this.settle();
                 assert.equal(checked(), "false");
                 assert.equal(element("skill-selection-count").children, "0 selected");
-                click("skill-function-toggle-0");
+                click("skill-function-toggle-function");
                 await this.settle();
                 assert.equal(element("skill-save-status").children, "Unsaved changes");
                 assert.equal(requests.some(request => request.options.method === "POST"), false);
@@ -146,23 +142,22 @@ class TestWorkspaceController {
             }));
             const fixture = this.setup({catalogue, skills: [catalogue[0]], functions: ["planning", "delivery"]});
             const {element, click} = fixture;
-            const states = () => element("skill-browser-columns").children[1].props.children[1].props.children
-                .map(row => row.props.children[0].props["aria-checked"]);
+            const states = () => Object.values(element("skill-catalogue-view").data.function_states);
             try {
                 await this.settle();
                 click("show-skill-browser");
                 await this.settle();
-                click("skill-path-domains-0");
+                click("skill-path-domains-example");
                 await this.settle();
                 assert.deepEqual(states(), ["true", "false"]);
-                click("skill-path-functions-0");
+                click("skill-path-functions-planning");
                 await this.settle();
-                click("skill-function-toggle-1");
+                click("skill-function-toggle-delivery");
                 await this.settle();
                 assert.deepEqual(states(), ["true", "true"]);
                 assert.equal(element("skill-selection-count").children, "2 selected");
-                assert.doesNotMatch(JSON.stringify(element("skill-browser-columns").children[2]), /Select delivery/);
-                click("skill-function-toggle-1");
+                assert.doesNotMatch(JSON.stringify(element("skill-catalogue-view").data.pages.skills.items), /delivery/);
+                click("skill-function-toggle-delivery");
                 await this.settle();
                 assert.deepEqual(states(), ["true", "false"]);
                 assert.equal(element("skill-selection-count").children, "1 selected");
@@ -175,20 +170,15 @@ class TestWorkspaceController {
                 state.catalogue = [{skill_id: "alpha", display_name: "Alpha", description: "Synthetic Skill", groups: []}];
                 await this.settle();
                 assert.equal(element("skill-count").children, "0 assigned Skills");
-                const withdrawnPanel = panel => element(panel).children.find(item => item.props.className === "withdrawn-panel");
-                assert.equal(withdrawnPanel("skills-list").props.children.filter(item => item.type === "P").length, 1);
+                assert.equal(element("saved-skill-view").data.filter(skill => skill.withdrawn).length, 2);
                 click("show-skill-browser");
                 await this.settle();
                 assert.equal(element("skill-selection-count").children, "0 selected");
-                const marketplace = withdrawnPanel("current-skills").props.children;
-                assert.equal(marketplace.filter(item => item.type === "P").length, 2);
-                assert.equal(marketplace.filter(item => item.props.className === "selected-item withdrawn-item").length, 2);
-                assert.match(JSON.stringify(marketplace[2]), /Save Skills/);
-                assert.match(JSON.stringify(element("current-skills").children), /Remove Retired skill/);
+                assert.equal(element("skill-selection-view").data.filter(skill => skill.withdrawn).length, 2);
                 input("skill-search", "alpha");
                 await this.settle();
-                assert.doesNotMatch(JSON.stringify(element("skill-browser-columns").children), /Retired skill/);
-                click("skill-option-0");
+                assert.doesNotMatch(JSON.stringify(element("skill-catalogue-view").data.pages.search.items), /Retired skill/);
+                click("skill-option-alpha");
                 click("save-skills");
                 await this.settle();
                 assert.deepEqual(JSON.parse(requests.find(request => request.url.endsWith("/workspace/skills")).options.body).skill_ids, ["retired-skill", "another-retired-skill", "alpha"]);
@@ -205,8 +195,7 @@ class TestWorkspaceController {
             const {state, element, click, input, requests} = fixture;
             const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example", "example/z-function"]};
             const beta = {skill_id: "beta-skill", display_name: "Beta", description: "Second Skill", groups: ["example", "example/a-function"]};
-            const currentSkills = () => element("current-skills").children.map(item =>
-                item.type === "Div" ? item.props.children[0].props.children[0].props.children : item.props.children);
+            const currentSkills = () => element("skill-selection-view").data.map(skill => skill.display_name).sort();
             try {
                 state.catalogue = [alpha, beta];
                 state.skills = [alpha];
@@ -218,16 +207,16 @@ class TestWorkspaceController {
                 click("skill-more-domains");
                 await this.settle();
                 assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?offset=1")));
-                click("skill-path-domains-0");
+                click("skill-path-domains-example");
                 await this.settle();
-                click("skill-path-functions-0");
+                click("skill-path-functions-function");
                 await this.settle();
                 input("skill-search", "beta");
                 await this.settle();
                 assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?q=beta")));
-                click("skill-option-0");
+                click("skill-option-beta-skill");
                 assert.equal(element("skill-selection-count").children, "2 selected");
-                const grouped = ["Example", "A function", "Beta", "Z function", "Alpha"];
+                const grouped = ["Alpha", "Beta"];
                 assert.deepEqual(currentSkills(), grouped);
                 click("save-skills");
                 await this.settle();
@@ -235,7 +224,7 @@ class TestWorkspaceController {
                 assert.equal(element("skill-save-status").children, "Skills saved");
                 assert.equal(element("skill-count").children, "2 assigned Skills");
                 click("skill-remove-beta-skill");
-                assert.deepEqual(currentSkills(), ["Example", "Z function", "Alpha"]);
+                assert.deepEqual(currentSkills(), ["Alpha"]);
                 click("skill-remove-alpha");
                 click("cancel-skills");
                 assert.equal(element("skill-selection-count").children, "2 selected");
@@ -263,7 +252,7 @@ class TestWorkspaceController {
                 await this.settle();
                 input("skill-search", "alpha");
                 await this.settle();
-                click("skill-option-0");
+                click("skill-option-alpha");
                 element("message-input").value = "Keep this chat draft";
                 click("show-chat");
                 click("show-skill-browser");
@@ -274,7 +263,7 @@ class TestWorkspaceController {
                 await this.settle();
                 assert.equal(element("skill-editor").style.display, "flex");
                 assert.match(element("skill-editor-alert").children, /Currently saved: Beta/);
-                assert.equal(element("skill-option-0")["aria-pressed"], "true");
+                assert.equal(element("skill-catalogue-view").data.selected[0], "alpha");
                 assert.equal(requests.filter(request => request.url.endsWith("/workspace/skills")).length, 1);
                 click("save-skills");
                 await this.settle();

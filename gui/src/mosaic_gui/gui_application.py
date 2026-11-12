@@ -6,17 +6,18 @@ from flask import Response, send_file
 from .gui_configuration import GuiConfiguration
 from .gui_layout import GuiLayout
 from .gui_server import GuiServer
+from .skill_views import register_skill_callbacks
 
 
 class GuiApplication:
     @staticmethod
     def create_application(configuration: GuiConfiguration | None = None) -> Dash:
         """
-        Create a standalone Dash app without backend imports or server-side API calls.
+        Create a standalone Dash app with local presentation callbacks and browser API access.
 
         :param configuration: Optional operator-owned GUI configuration.
 
-        :return: Dash application serving only layout and local static assets.
+        :return: Dash application serving the GUI.
         """
         configuration = configuration or GuiConfiguration()
         application = Dash(
@@ -26,6 +27,7 @@ class GuiApplication:
             update_title=None,
         )
         application.layout = GuiLayout(configuration).create_layout()
+        register_skill_callbacks(application)
         application.index_string = """<!DOCTYPE html>
 <html><head>{%metas%}<title>{%title%}</title>
 <link rel="icon" type="image/svg+xml" href="/assets/tangram.svg">{%css%}</head>

@@ -153,7 +153,10 @@ History remains
 available in the sidebar. Skills are grouped by the most-specific available
 catalogue path and listed once. The Chat Skills panel starts collapsed. Open
 the **Skills** tab to browse by domain and function or search the published
-catalogue. Results load from the backend in pages. **Current Skills** tracks
+catalogue. Results load from the backend in pages. Python Dash callbacks render
+the catalogue and Skill selections from display data sent by the browser. The
+browser makes authenticated API requests directly and keeps the session cookie
+on the API host. **Current Skills** tracks
 your draft as you browse, and switching to Chat preserves both drafts.
 Saved Skills that disappear from the published catalogue are marked
 **Withdrawn** in **Current Skills**. They are excluded from the available

@@ -5,9 +5,33 @@ from xml.etree import ElementTree
 
 from mosaic_gui.gui_application import GuiApplication
 from mosaic_gui.gui_configuration import GuiConfiguration
+from mosaic_gui.skill_views import render_selection
 
 
 class TestGuiApplication(unittest.TestCase):
+    def test_skill_cards_group_available_skills_and_explain_withdrawal(self) -> None:
+        skills = [
+            {
+                'skill_id': 'plan',
+                'display_name': 'Plan',
+                'description': 'Plan a project.',
+                'groups': ['delivery/planning'],
+            },
+            {'skill_id': 'retired', 'display_name': 'Retired', 'withdrawn': True},
+        ]
+        saved = render_selection(skills)
+        editable = render_selection(skills, editable=True)
+
+        self.assertEqual([item.children for item in editable[:2]], ['Delivery', 'Planning'])
+        self.assertEqual(editable[2].children[0].children[0].children, 'Plan')
+        self.assertEqual(editable[-1].className, 'withdrawn-panel')
+        self.assertEqual(saved[-1].children[-1].children[0].children, 'Retired')
+        self.assertNotIn('Save Skills', str(saved[-1]))
+        self.assertIn('Save Skills', str(editable[-1]))
+        self.assertEqual(
+            editable[-1].children[-1].children[-1].id['action'], 'skill-remove-retired'
+        )
+
     def test_ada_credit_appears_only_in_sign_in_card(self) -> None:
         layout = (
             GuiApplication.create_application(GuiConfiguration())
@@ -147,7 +171,7 @@ class TestGuiApplication(unittest.TestCase):
             '#16205d',
         )
 
-    def test_serves_bootstrap_layout_and_local_assets_without_server_callbacks(
+    def test_serves_bootstrap_layout_local_assets_and_skill_callbacks(
         self,
     ) -> None:
         application = GuiApplication.create_application(GuiConfiguration())
@@ -166,7 +190,9 @@ class TestGuiApplication(unittest.TestCase):
         self.assertEqual(layout['props']['data-backend-url'], 'http://127.0.0.1:8000')
         self.assertIn('dash_bootstrap_components', str(layout))
         self.assertNotIn('plaintext_token', str(layout))
-        self.assertEqual(application.callback_map, {})
+        self.assertIn('current-skills.children', application.callback_map)
+        self.assertIn('skills-list.children', application.callback_map)
+        self.assertIn('skill-action-result.data', application.callback_map)
         for asset in (
             '00_bootstrap.min.css',
             '10_workspace.css',
