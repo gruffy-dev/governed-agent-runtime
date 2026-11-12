@@ -4,10 +4,14 @@ from dash import Dash
 from flask import Response, send_file
 
 from .chat_composer import register_chat_composer
-from .conversation_sidebar import register_conversation_sidebar
+from .conversation_sidebar import (
+    register_conversation_sidebar,
+    register_sidebar_visibility,
+)
 from .gui_configuration import GuiConfiguration
 from .gui_layout import GuiLayout
 from .gui_server import GuiServer
+from .skill_editor import register_skill_editor
 from .skill_views import register_skill_callbacks
 
 
@@ -30,7 +34,9 @@ class GuiApplication:
         )
         application.layout = GuiLayout(configuration).create_layout()
         register_skill_callbacks(application)
+        register_skill_editor(application)
         register_conversation_sidebar(application)
+        register_sidebar_visibility(application)
         register_chat_composer(application)
         application.index_string = """<!DOCTYPE html>
 <html><head>{%metas%}<title>{%title%}</title>

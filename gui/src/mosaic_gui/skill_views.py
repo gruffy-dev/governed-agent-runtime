@@ -4,19 +4,19 @@ from dash import ALL, Input, Output, html
 def register_skill_callbacks(application):
     """Render Skills in Dash and route browser-owned actions through component inputs."""
     application.callback(
-        Output('skill-browser-path', 'children'),
-        Output('skill-browser-columns', 'children'),
-        Output('skill-browser-columns', 'className'),
-        Input('skill-catalogue-view', 'data'),
-    )(render_catalogue)
-    application.callback(
-        Output('current-skills', 'children'),
-        Input('skill-selection-view', 'data'),
-    )(lambda skills: render_selection(skills, editable=True))
-    application.callback(
+        Output('skill-count', 'children'),
         Output('skills-list', 'children'),
         Input('saved-skill-view', 'data'),
-    )(render_selection)
+    )(render_saved_selection)
+    application.callback(
+        Output('invocation-skills', 'children'),
+        Input('invocation-skill-view', 'data'),
+    )(render_invocation_skills)
+    application.callback(
+        Output('show-chat', 'aria-current'),
+        Output('show-skill-browser', 'aria-current'),
+        Input('mosaic-root', 'data-workspace-view'),
+    )(active_workspace_tab)
     application.clientside_callback(
         """
         function(clicks, chat, skills, save, discard) {
@@ -42,12 +42,12 @@ def register_skill_callbacks(application):
         prevent_initial_call=True,
     )
     application.clientside_callback(
-        '''
+        """
         function(query) {
             window.mosaicSkillAction?.("skill-search", query);
             return window.dash_clientside.no_update;
         }
-        ''',
+        """,
         Output('skill-action-result', 'data', allow_duplicate=True),
         Input('skill-search', 'value'),
         prevent_initial_call=True,
@@ -331,3 +331,44 @@ def render_selection(skills, editable=False):
             )
         )
     return items
+
+
+def workspace_selection(workspace):
+    return [
+        *workspace['skills'],
+        *(
+            {
+                'skill_id': skill_id,
+                'display_name': _label(skill_id, 'Withdrawn Skill'),
+                'withdrawn': True,
+            }
+            for skill_id in workspace.get('withdrawn_skill_ids', [])
+        ),
+    ]
+
+
+def render_saved_selection(workspace):
+    if workspace is None:
+        return '', []
+    count = len(workspace['skills'])
+    return f'{count} assigned {"Skill" if count == 1 else "Skills"}', render_selection(
+        workspace_selection(workspace)
+    )
+
+
+def render_invocation_skills(skills):
+    """Render approved Skill labels for an active invocation."""
+    if not skills:
+        return ''
+    if len(skills) == 1:
+        return f'Skill: {skills[0]}'
+    return html.Details(
+        [
+            html.Summary(f'{len(skills)} selected skills'),
+            html.Ul([html.Li(name) for name in skills]),
+        ]
+    )
+
+
+def active_workspace_tab(view):
+    return (None, 'page') if view == 'skills' else ('page', None)

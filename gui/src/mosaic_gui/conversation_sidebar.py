@@ -7,15 +7,6 @@ def register_conversation_sidebar(application):
         Output('conversation-list', 'children'),
         Input('conversation-row-ids', 'data'),
     )(render_conversation_rows)
-    application.callback(
-        Output('history-panel', 'style'),
-        Output('history-resizer', 'style'),
-        Output('history-show', 'style'),
-        Input('history-show', 'n_clicks'),
-        Input('history-toggle', 'n_clicks'),
-        prevent_initial_call=True,
-    )(_toggle_sidebar)
-
     application.clientside_callback(
         """
         function(view, row) {
@@ -108,8 +99,24 @@ def _row_id(component_type, conversation_id):
     return {'type': component_type, 'conversation': conversation_id}
 
 
-def _toggle_sidebar(_show_clicks, _hide_clicks):
-    show = ctx.triggered_id == 'history-show'
+def register_sidebar_visibility(application):
+    """Use Dash controls to open and close the two Chat sidebars."""
+    for side in ('history', 'skills'):
+        inputs = [Input(f'{side}-show', 'n_clicks'), Input(f'{side}-toggle', 'n_clicks')]
+        if side == 'skills':
+            # Reset Current Skills on sign-in, when the workspace navigation appears.
+            inputs.append(Input('mosaic-root', 'data-signed-in'))
+        application.callback(
+            Output(f'{side}-panel', 'style'),
+            Output(f'{side}-resizer', 'style'),
+            Output(f'{side}-show', 'style'),
+            *inputs,
+            prevent_initial_call=True,
+        )(_toggle_sidebar)
+
+
+def _toggle_sidebar(*_inputs):
+    show = ctx.triggered_id in ('history-show', 'skills-show')
     return (
         {'display': 'flex' if show else 'none'},
         {'display': 'block' if show else 'none'},

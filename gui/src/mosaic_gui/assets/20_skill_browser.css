@@ -1,8 +1,12 @@
-.workspace-page { height:calc(100dvh - 118px); }
+#mosaic-root[data-signed-in="true"] .page-main { height:calc(100dvh - 118px); }
+#mosaic-root[data-signed-in="false"] :is(.workspace-navigation, .workspace-screen, .skill-browser-screen),
+#mosaic-root[data-signed-in="true"] .login-screen,
+#mosaic-root[data-workspace-view="skills"] .workspace-screen,
+#mosaic-root[data-workspace-view="chat"] .skill-browser-screen { display:none; }
 .workspace-navigation { display:flex; gap:22px; padding:0 30px; background:white; border-bottom:1px solid #dee3f2; }
 .workspace-navigation button { background:none; border:0; border-bottom:2px solid transparent; padding:12px 3px; font-size:13px; font-weight:650; color:var(--mosaic-text-secondary); }
 .workspace-navigation [aria-current="page"] { border-color:var(--mosaic-primary); color:var(--mosaic-primary); }
-.skill-browser-screen { flex-direction:column; overflow:auto; height:100%; padding:28px 24px; }
+.skill-browser-screen { display:flex; flex-direction:column; overflow:auto; height:100%; padding:28px 24px; }
 .skill-browser-screen h1 { font-size:24px; font-weight:650; color:var(--mosaic-strong); margin-bottom:6px; }
 .browser-description { font-size:13px; color:var(--mosaic-text-support); }
 .skill-browser { background:white; border:1px solid #dee3f2; border-radius:12px; overflow:hidden; }

@@ -11,7 +11,7 @@ class TestWorkspaceController {
         const timers = new Map();
         const element = id => {
             if (!elements.has(id)) elements.set(id, {id, value: "", disabled: false, dataset: {}, scrollHeight: 0, scrollTop: 0, clientHeight: 100,
-                setAttribute() {}, append() {}, addEventListener() {}, querySelectorAll: () => []});
+                setAttribute() {}, append() {}, addEventListener(name, callback) {listeners.set(id + ":" + name, callback);}, querySelectorAll: () => []});
             return elements.get(id);
         };
         globalThis.document = {createElement: () => element("pilot-token"), getElementById: element,
@@ -82,7 +82,8 @@ class TestWorkspaceController {
                 } else if (id.startsWith("conversation-")) {
                     window.mosaicConversationAction(id.slice("conversation-".length));
                 } else {
-                    listeners.get("click")({target: {closest: () => element(id)}});
+                    const control = id === "sign-in" ? "sign-in-form:submit" : id + ":click";
+                    if (!element(id).disabled) listeners.get(control)({preventDefault() {}});
                 }
             },
             input: (id, value) => window.mosaicSkillAction(id, value),
@@ -98,183 +99,23 @@ class TestWorkspaceController {
         for (let index = 0; index < 12; ++index) await new Promise(resolve => setImmediate(resolve));
     }
     static run() {
-        test("Function checkbox selects all pages, tracks partial selection, and waits for Save Skills", async () => {
-            const catalogue = ["alpha", "beta", "gamma"].map(skill_id => ({
-                skill_id, display_name: skill_id.toUpperCase(), description: "Synthetic Skill", groups: ["example/function"],
-            }));
-            const fixture = this.setup({catalogue, skills: [catalogue[0]], functionPageSize: 1, failFunctionOffset: 2});
-            const {state, element, click, requests} = fixture;
-            const checked = () => element("skill-catalogue-view").data.function_states.function;
-            try {
-                await this.settle();
-                click("show-skill-browser");
-                await this.settle();
-                click("skill-path-domains-example");
-                await this.settle();
-                assert.equal(checked(), "mixed");
-                click("skill-path-functions-function");
-                await this.settle();
-                assert.equal(checked(), "mixed");
-                click("skill-function-toggle-function");
-                await this.settle();
-                assert.equal(element("skill-editor-alert").is_open, true);
-                assert.equal(element("skill-selection-count").children, "1 selected");
-                state.failFunctionOffset = null;
-                click("skill-function-toggle-function");
-                await this.settle();
-                assert.equal(element("skill-selection-count").children, "3 selected");
-                assert.equal(checked(), "true");
-                click("skill-option-beta");
-                assert.equal(checked(), "mixed");
-                click("skill-function-toggle-function");
-                await this.settle();
-                assert.equal(checked(), "true");
-                click("skill-function-toggle-function");
-                await this.settle();
-                assert.equal(checked(), "false");
-                assert.equal(element("skill-selection-count").children, "0 selected");
-                click("skill-function-toggle-function");
-                await this.settle();
-                assert.equal(element("skill-save-status").children, "Unsaved changes");
-                assert.equal(requests.some(request => request.options.method === "POST"), false);
-                click("save-skills");
-                await this.settle();
-                assert.deepEqual(state.skills.map(skill => skill.skill_id), ["alpha", "beta", "gamma"]);
-            } finally {fixture.restore();}
-        });
-        test("Closed functions show selection state and can be toggled without opening them", async () => {
-            const catalogue = ["planning", "delivery"].map(skill_id => ({
-                skill_id, display_name: skill_id, description: "Synthetic Skill", groups: ["example/" + skill_id],
-            }));
-            const fixture = this.setup({catalogue, skills: [catalogue[0]], functions: ["planning", "delivery"]});
-            const {element, click} = fixture;
-            const states = () => Object.values(element("skill-catalogue-view").data.function_states);
-            try {
-                await this.settle();
-                click("show-skill-browser");
-                await this.settle();
-                click("skill-path-domains-example");
-                await this.settle();
-                assert.deepEqual(states(), ["true", "false"]);
-                click("skill-path-functions-planning");
-                await this.settle();
-                click("skill-function-toggle-delivery");
-                await this.settle();
-                assert.deepEqual(states(), ["true", "true"]);
-                assert.equal(element("skill-selection-count").children, "2 selected");
-                assert.doesNotMatch(JSON.stringify(element("skill-catalogue-view").data.pages.skills.items), /delivery/);
-                click("skill-function-toggle-delivery");
-                await this.settle();
-                assert.deepEqual(states(), ["true", "false"]);
-                assert.equal(element("skill-selection-count").children, "1 selected");
-            } finally {fixture.restore();}
-        });
-        test("Withdrawn Skills appear only in Current Skills and can be removed", async () => {
-            const fixture = this.setup({withdrawn: ["retired-skill", "another-retired-skill"]});
-            const {state, element, click, input, requests} = fixture;
-            try {
-                state.catalogue = [{skill_id: "alpha", display_name: "Alpha", description: "Synthetic Skill", groups: []}];
-                await this.settle();
-                assert.equal(element("skill-count").children, "0 assigned Skills");
-                assert.equal(element("saved-skill-view").data.filter(skill => skill.withdrawn).length, 2);
-                click("show-skill-browser");
-                await this.settle();
-                assert.equal(element("skill-selection-count").children, "0 selected");
-                assert.equal(element("skill-selection-view").data.filter(skill => skill.withdrawn).length, 2);
-                input("skill-search", "alpha");
-                await this.settle();
-                assert.doesNotMatch(JSON.stringify(element("skill-catalogue-view").data.pages.search.items), /Retired skill/);
-                click("skill-option-alpha");
-                click("save-skills");
-                await this.settle();
-                assert.deepEqual(JSON.parse(requests.find(request => request.url.endsWith("/workspace/skills")).options.body).skill_ids, ["retired-skill", "another-retired-skill", "alpha"]);
-                click("skill-remove-retired-skill");
-                click("skill-remove-another-retired-skill");
-                click("save-skills");
-                await this.settle();
-                assert.deepEqual(state.withdrawn, []);
-                assert.equal(element("skill-selection-count").children, "1 selected");
-            } finally {fixture.restore();}
-        });
-        test("Skill search retains hidden selections and save can clear the workspace", async () => {
+        test("Marketplace sends browser API results back to Dash and preserves the chat draft", async () => {
             const fixture = this.setup();
-            const {state, element, click, input, requests} = fixture;
-            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "First Skill", groups: ["example", "example/z-function"]};
-            const beta = {skill_id: "beta-skill", display_name: "Beta", description: "Second Skill", groups: ["example", "example/a-function"]};
-            const currentSkills = () => element("skill-selection-view").data.map(skill => skill.display_name).sort();
             try {
-                state.catalogue = [alpha, beta];
-                state.skills = [alpha];
                 await this.settle();
-                click("show-skill-browser");
+                fixture.element("message-input").value = "Keep this chat draft";
+                fixture.click("show-skill-browser");
+                const event = fixture.element("skill-editor-event").data;
+                assert.equal(event.action, "open");
+                window.mosaicSkillState({sequence: event.sequence, request: {id: event.sequence, kind: "workspace"}});
                 await this.settle();
-                assert.equal(element("skill-editor").style.display, "flex");
-                assert.equal(requests.filter(request => request.url.includes("/skills/catalogue")).length, 1);
-                click("skill-more-domains");
-                await this.settle();
-                assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?offset=1")));
-                click("skill-path-domains-example");
-                await this.settle();
-                click("skill-path-functions-function");
-                await this.settle();
-                input("skill-search", "beta");
-                await this.settle();
-                assert.ok(requests.some(request => request.url.endsWith("/skills/catalogue?q=beta")));
-                click("skill-option-beta-skill");
-                assert.equal(element("skill-selection-count").children, "2 selected");
-                const grouped = ["Alpha", "Beta"];
-                assert.deepEqual(currentSkills(), grouped);
-                click("save-skills");
-                await this.settle();
-                assert.deepEqual(currentSkills(), grouped);
-                assert.equal(element("skill-save-status").children, "Skills saved");
-                assert.equal(element("skill-count").children, "2 assigned Skills");
-                click("skill-remove-beta-skill");
-                assert.deepEqual(currentSkills(), ["Alpha"]);
-                click("skill-remove-alpha");
-                click("cancel-skills");
-                assert.equal(element("skill-selection-count").children, "2 selected");
-                click("skill-remove-beta-skill");
-                click("skill-remove-alpha");
-                click("save-skills");
-                await this.settle();
-                assert.equal(element("skill-count").children, "0 assigned Skills");
-                const saves = requests.filter(request => request.url.endsWith("/workspace/skills"));
-                assert.deepEqual(saves.map(request => JSON.parse(request.options.body)), [
-                    {expected_version: 1, skill_ids: ["alpha", "beta-skill"]},
-                    {expected_version: 2, skill_ids: []},
-                ]);
-            } finally {fixture.restore();}
-        });
-        test("Skill conflicts show the saved selection and require a fresh click to retry", async () => {
-            const fixture = this.setup();
-            const {state, element, click, input, requests} = fixture;
-            const alpha = {skill_id: "alpha", display_name: "Alpha", description: "", groups: []};
-            const beta = {skill_id: "beta", display_name: "Beta", description: "", groups: []};
-            try {
-                state.catalogue = [alpha, beta];
-                await this.settle();
-                click("show-skill-browser");
-                await this.settle();
-                input("skill-search", "alpha");
-                await this.settle();
-                click("skill-option-alpha");
-                element("message-input").value = "Keep this chat draft";
-                click("show-chat");
-                click("show-skill-browser");
-                assert.equal(element("message-input").value, "Keep this chat draft");
-                state.skills = [beta];
-                state.version = 2;
-                click("save-skills");
-                await this.settle();
-                assert.equal(element("skill-editor").style.display, "flex");
-                assert.match(element("skill-editor-alert").children, /Currently saved: Beta/);
-                assert.equal(element("skill-catalogue-view").data.selected[0], "alpha");
-                assert.equal(requests.filter(request => request.url.endsWith("/workspace/skills")).length, 1);
-                click("save-skills");
-                await this.settle();
-                assert.deepEqual(state.skills, [alpha]);
-                assert.equal(state.version, 3);
+                const result = fixture.element("skill-editor-event").data;
+                assert.equal(result.action, "result");
+                assert.equal(result.value.data.version, 1);
+                assert.equal(result.value.data.user_id, undefined);
+                window.mosaicSkillState({sequence: result.sequence, request: null});
+                fixture.click("show-chat");
+                assert.equal(fixture.element("message-input").value, "Keep this chat draft");
             } finally {fixture.restore();}
         });
         test("Sidebar navigation publishes row IDs separately from private titles", async () => {
@@ -415,7 +256,7 @@ class TestWorkspaceController {
                 feed({content: {role: "user", parts: [{functionResponse: {name: "discover_capabilities", id: "discovery", response: {status: "available", capabilities: [{name: "splunk.index.errors.read", available: true, description: "Read application error counts."}]}}}]}});
                 feed({content: {role: "model", parts: [{functionCall: {name: "execute_capability", id: "check", args: {capability_name: "splunk.index.errors.read", semantic_arguments: {private: "private"}}}}]}});
                 await this.settle();
-                assert.equal(fixture.element("invocation-skills").children, "Skill: Inspect application logs");
+                assert.deepEqual(fixture.element("invocation-skill-view").data, ["Inspect application logs"]);
                 assert.equal(fixture.element("invocation-stage").children, "Splunk · Read application error counts.");
                 feed({content: {role: "user", parts: [{functionResponse: {name: "execute_capability", id: "check", response: {status: "success"}}}]}});
                 feed({partial: true, content: {role: "model", parts: [{text: "An answer"}]}});
@@ -425,7 +266,7 @@ class TestWorkspaceController {
                 source.close();
                 await this.settle();
                 assert.equal(fixture.element("invocation-activity").style.display, "none");
-                assert.equal(fixture.element("invocation-skills").children, "");
+                assert.equal(fixture.element("invocation-skill-view").data, null);
                 assert.equal(fixture.timers.size, 0);
             } finally {fixture.restore();}
         });

@@ -91,7 +91,6 @@ class GuiLayout:
                     ],
                     id='workspace-navigation',
                     className='workspace-navigation',
-                    style={'display': 'none'},
                     **{'aria-label': 'Workspace'},
                 ),
                 html.Main(
@@ -135,7 +134,7 @@ class GuiLayout:
                                                         id='sign-in',
                                                         color='primary',
                                                         className='w-100 sign-in-button',
-                                                        type='button',
+                                                        type='submit',
                                                     ),
                                                 ],
                                                 id='sign-in-form',
@@ -270,7 +269,7 @@ class GuiLayout:
                                                             title='Show Current Skills',
                                                             color='link',
                                                             size='sm',
-                                                            style={'display': 'none'},
+                                                            style={'display': 'inline-block'},
                                                         ),
                                                     ],
                                                     className='conversation-tools',
@@ -316,6 +315,29 @@ class GuiLayout:
                                             style={'display': 'none'},
                                         ),
                                         html.Div(
+                                            [
+                                                html.Div(id='message-transcript'),
+                                                html.Div(
+                                                    [
+                                                        html.Img(
+                                                            src='/assets/tangram.svg',
+                                                            alt='',
+                                                            className='welcome-symbol',
+                                                        ),
+                                                        html.H2('What would you like to work on?'),
+                                                        html.P(
+                                                            'Ask a question or describe your Goal. MOSAIC brings '
+                                                            'together your assigned Skills and the capabilities they need.'
+                                                        ),
+                                                        html.Div(
+                                                            'Open Current Skills to see what is available. '
+                                                            'You can read earlier conversations or start something new.',
+                                                            className='welcome-hint',
+                                                        ),
+                                                    ],
+                                                    className='welcome',
+                                                ),
+                                            ],
                                             id='messages',
                                             className='messages',
                                             **{
@@ -374,6 +396,7 @@ class GuiLayout:
                                 html.Div(
                                     id='skills-resizer',
                                     className='panel-resizer',
+                                    style={'display': 'none'},
                                     role='separator',
                                     tabIndex=0,
                                     **{
@@ -413,11 +436,11 @@ class GuiLayout:
                                     ],
                                     id='skills-panel',
                                     className='skills-panel',
+                                    style={'display': 'none'},
                                 ),
                             ],
                             id='workspace-screen',
                             className='workspace-screen',
-                            style={'display': 'none'},
                         ),
                         self._skill_browser(),
                     ],
@@ -428,13 +451,19 @@ class GuiLayout:
                 dcc.Store(id='conversation-sidebar-view', storage_type='memory'),
                 dcc.Store(id='conversation-action-result', storage_type='memory'),
                 dcc.Store(id='composer-action-result', storage_type='memory'),
-                dcc.Store(id='skill-catalogue-view', storage_type='memory'),
-                dcc.Store(id='skill-selection-view', storage_type='memory'),
+                dcc.Store(id='skill-editor-event', storage_type='memory'),
+                dcc.Store(id='skill-editor-state', storage_type='memory'),
+                dcc.Store(id='skill-workspace-busy', storage_type='memory'),
                 dcc.Store(id='saved-skill-view', storage_type='memory'),
+                dcc.Store(id='invocation-skill-view', storage_type='memory'),
                 dcc.Store(id='skill-action-result', storage_type='memory'),
             ],
             id='mosaic-root',
-            **{'data-backend-url': self._configuration.backend_url},
+            **{
+                'data-backend-url': self._configuration.backend_url,
+                'data-signed-in': 'false',
+                'data-workspace-view': 'chat',
+            },
         )
 
     def _skill_browser(self) -> html.Section:
@@ -532,5 +561,4 @@ class GuiLayout:
             ],
             id='skill-editor',
             className='skill-browser-screen',
-            style={'display': 'none'},
         )

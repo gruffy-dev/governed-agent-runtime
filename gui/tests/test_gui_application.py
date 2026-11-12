@@ -190,11 +190,11 @@ class TestGuiApplication(unittest.TestCase):
         self.assertEqual(layout['props']['data-backend-url'], 'http://127.0.0.1:8000')
         self.assertIn('dash_bootstrap_components', str(layout))
         self.assertNotIn('plaintext_token', str(layout))
-        self.assertIn('current-skills.children', application.callback_map)
+        self.assertIn('skill-editor-state.data', application.callback_map)
         self.assertIn('conversation-list.children', application.callback_map)
         self.assertIn('conversation-action-result.data', application.callback_map)
         self.assertNotIn('callback', application.callback_map['composer-action-result.data'])
-        self.assertIn('skills-list.children', application.callback_map)
+        self.assertTrue(any('skills-list.children' in key for key in application.callback_map))
         self.assertIn('skill-action-result.data', application.callback_map)
         for asset in (
             '00_bootstrap.min.css',
