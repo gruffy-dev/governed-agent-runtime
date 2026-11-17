@@ -44,7 +44,7 @@ MOSAIC is intended to break that dependency.
 | **Consistent quality at scale** | Every team can begin from the same approved investigative baseline, regardless of individual experience or time pressure. |
 | **Knowledge that survives organisational change** | Important operational practice becomes an owned, reusable asset rather than remaining in individual memory. |
 | **Lower cost of integration** | A platform or evidence source can support many use cases without a bespoke point-to-point assistant integration for each one. |
-| **Faster onboarding and self-service** | People can benefit from established expertise while they are still learning the organisation's systems and operating model. |
+| **Easier self-service** | People can benefit from established expertise while they are still learning the organisation's systems and operating model. |
 | **Greater confidence in enterprise AI** | AI adoption can expand within visible operational and governance boundaries instead of relying on unrestricted model behaviour. |
 | **Freedom to evolve technology choices** | Operational knowledge remains useful when providers, endpoints, models, or presentation channels change. |
 
@@ -497,23 +497,18 @@ plain-language summary for service owners and executives.
 
 ## Configuration overview
 
-MOSAIC configuration is separated by ownership. This distinguishes the
-settings required to operate MOSAIC from the knowledge and integrations
-contributed by domain teams, the access boundaries established by workspace
-administrators, and the choices an individual user will eventually make.
+MOSAIC configuration covers deployment settings, workspace access and choices
+users make in their own workspace.
 
 | Configuration area | Owner | Purpose |
 | --- | --- | --- |
 | **MOSAIC platform configuration** | MOSAIC platform administrators | Connect and operate the MOSAIC runtime, select its approved model, locate its governed configuration sources, and enforce deployment-wide limits. |
-| **Operational domain contributions** | Platform and domain teams such as OpenShift, database, observability, and MQ teams | Contribute approved **Skills** and the integration definitions needed to connect their domain knowledge to governed **Capabilities** and **Providers**. |
 | **Workspace and access governance** | Tenant, workspace, and access administrators | Determine which approved **Skills** and **Targets** are available to a tenant, workspace, team, or role, and govern Skill profiles, quotas, and access policy. The current MVP implements only a temporary subset of this boundary. |
 | **User and Session configuration** | Users | Select published **Skills** for their own workspace through the pilot API and identify the intended **Target** through conversation. The GUI editor is a separate follow-up. |
 
 ### MOSAIC platform configuration
 
-These settings belong to the MOSAIC deployment and should be managed by MOSAIC
-platform administrators. They are not contribution fields for external domain
-teams and are not user preferences.
+MOSAIC platform administrators manage these deployment settings.
 
 #### Required MCP transport setting
 
@@ -615,26 +610,6 @@ user-facing concept is the Integration manifest.
 | `MOSAIC_SKILLS_MAXIMUM_DISCOVERY_METADATA_CHARACTERS` | Maximum Skill metadata exposed during discovery. |
 | `MOSAIC_SKILLS_MAXIMUM_LOADED_SKILL_COUNT` | Maximum Skills loaded for one Goal. |
 | `MOSAIC_SKILLS_MAXIMUM_LOADED_SKILL_CHARACTERS` | Maximum complete Skill content loaded for one Goal. |
-
-### Operational domain contributions
-
-External platform and domain teams contribute two related types of governed
-content:
-
-| Contribution | What it contains | Current MVP publication route |
-| --- | --- | --- |
-| **Skill package** | `SKILL.md` contains the approved instructions. `mosaic.yaml` contains Skill metadata and its required and optional Capability requirements. | Published as a versioned package in the Git Skill catalogue. |
-| **Integration definition** | The team's Targets, Providers, Capabilities, Capability bindings, Routing, and Evidence limits. Credentials and access tokens are never contribution content. | Incorporated into the deployment's versioned JSON Integration manifest and activated by MOSAIC platform administrators. |
-
-Skill packages use the hierarchy
-`skills/<domain>/<function>/<skill-name>`. MOSAIC validates the complete Git
-revision before making its Skills available for progressive disclosure.
-
-The MVP uses one deployment-managed JSON Integration manifest. This is an
-interim publication format, not the intended long-term contribution,
-authoring, review, or governance interface. Future tooling is expected to let
-teams submit and validate independently owned contributions before MOSAIC
-composes and publishes an immutable Integration manifest.
 
 ### Workspace and access governance
 
@@ -817,6 +792,9 @@ tool allowlist, and one routing mode:
 | `endpoint_per_target` | One endpoint serves exactly one canonical target. | `target_id` |
 | `shared_endpoint` | One endpoint serves several targets using a protected selector argument. | `target_argument_name`, `target_bindings` |
 
+Keep credentials and access tokens out of the snapshot. The runtime supplies
+provider authentication through the configured header strategy.
+
 Endpoint-per-target example:
 
 ```json
@@ -989,296 +967,6 @@ Deployment-wide ceilings can further restrict snapshot declarations:
 - `MOSAIC_CAPABILITY_RESULT_MAXIMUM_COLLECTION_ITEMS`
 - `MOSAIC_CAPABILITIES_MAXIMUM_CANDIDATE_COUNT`
 - `MOSAIC_CAPABILITIES_MAXIMUM_METADATA_CHARACTERS`
-
-## Recommended configuration workflow
-
-1. **Start with the user outcome.** Define the operational question the
-   capability must answer, independently of any provider.
-2. **Inspect the real MCP contract.** Capture the exact endpoint, tool name,
-   input schema, authentication expectations, response envelope, and bounded
-   sample responses.
-3. **Define targets and ownership.** Use stable canonical identities rather
-   than endpoint names or user aliases.
-4. **Create the provider allowlist.** Include only tools required by approved
-   capabilities.
-5. **Map arguments.** Separate user/model-supplied semantic inputs from fixed
-   policy and protected routing values.
-6. **Design bounded result handling.** Prefer provider-side filtering,
-   pagination, aggregation, time windows, or limits before MOSAIC reduction.
-7. **Connect skills by semantic name.** Add required and optional capability
-   names to the relevant skill's `mosaic.yaml`.
-8. **Validate the complete candidate.** Do not activate fragments of an
-   invalid snapshot.
-9. **Test against the real provider.** Generated or inferred bindings remain
-   unverified until exercised against the target MCP server.
-10. **Publish an immutable snapshot.** Change `snapshot_id` when publishing a
-    new validated configuration.
-
-Never place credentials or access tokens in the runtime snapshot. Provider
-authentication is supplied through the approved runtime header strategy.
-
-## Using AI to seed a platform integration
-
-MOSAIC does not need to begin each platform integration with an author defining
-one outcome and one binding at a time. A frontier model with repository access
-can inspect an MCP server's source code, registered tools, input schemas, tests,
-documentation, and representative responses. It can combine that evidence with
-the MOSAIC configuration contracts and its broader understanding of a
-well-known platform to propose a useful initial set of operational outcomes.
-
-The result is a **candidate platform seed**: a coherent starting point that a
-platform team validates and improves, not configuration that an LLM publishes
-directly into a live MOSAIC deployment.
-
-### The pattern demonstrated by the MVP
-
-The initial Kubernetes and observability integration was produced using this
-approach. Analysis of the Kubernetes and observability MCP implementations was
-used to identify common read-only investigations and the smallest useful tool
-combinations needed to support them. The resulting seed currently includes two
-Providers, 53 provider-neutral Capabilities, and 11 container-platform and
-OpenShift Skills.
-
-Those Skills cover common areas such as workload inspection, rollout failure,
-service connectivity, storage failure, ingress, capacity, platform health, and
-time-bounded observability signals. The generated artefacts preserve MOSAIC's
-separation of responsibilities:
-
-| Generated artefact | Purpose |
-| --- | --- |
-| `SKILL.md` | Describes when a Skill applies, the inspection or investigation it performs, the evidence standards it follows, and its safety constraints without exposing provider-specific tools. |
-| `mosaic.yaml` | Declares the Skill's required and optional Capability requirements. |
-| Integration manifest JSON | Defines the Targets, Providers, Capabilities, Capability bindings, Routing, argument mappings, result extraction rules, and safety limits needed to execute those Skills. |
-| Generation and validation report | Records the inspected source revision, excluded or unsafe tools, unresolved deployment facts, assumptions, test evidence, and items requiring platform-owner approval. This report is not part of the runtime JSON. |
-
-The model can therefore propose many related outcomes in one pass while the
-runtime configuration remains outcome-oriented. It should not create one Skill
-or Capability for every MCP tool or expose the MCP server directly to the
-model.
-
-MOSAIC loads one complete Integration manifest JSON at startup. A
-platform-specific manifest contribution may be generated separately for review,
-but it is not an additional runtime input. Before activation, merge its
-Targets, Providers, and Capabilities into the deployment's single complete
-snapshot, assign a new `snapshot_id`, and validate the whole document
-atomically.
-
-### Choose outcomes before tools
-
-A useful seed normally begins with two predominant themes. They are starting
-points rather than an exhaustive taxonomy:
-
-| Theme | Purpose | Typical scope |
-| --- | --- | --- |
-| Resource and state inspection | Obtain current state or selected configuration for a known entity. | One explicitly selected Target and, where applicable, one exact resource name. |
-| Investigation | Combine several bounded observations to explain a reported symptom or answer an operational question. | The smallest set of related entities and evidence required to test supported explanations. |
-
-Other benign outcomes, such as bounded discovery, relationship tracing, or
-configuration comparison, may also belong in the seed when the provider can
-support them safely. A seed should not include an outcome merely because a
-provider exposes a corresponding tool. Each Skill must be useful to a user,
-and each Capability must have a clear semantic result independent of the
-provider that implements it.
-
-### Recommended seeding process
-
-```mermaid
-flowchart TD
-    Source[MCP repository at a pinned revision] --> Analyse[AI-assisted contract and platform analysis]
-    Guidance[Platform documentation, runbooks and common tasks] --> Analyse
-    Contracts[MOSAIC schemas and existing catalogue] --> Analyse
-    Deployment[Targets, endpoints and policy constraints] --> Analyse
-    Analyse --> Seed[Candidate platform seed]
-    Seed --> Skills[SKILL.md and mosaic.yaml packages]
-    Seed --> Manifest[Integration manifest contribution]
-    Seed --> Report[Assumptions and unresolved inputs]
-    Skills --> Validate[Schema, reference and safety validation]
-    Manifest --> Validate
-    Report --> Review[Platform-owner review]
-    Validate --> Test[Sandbox MCP tests and representative responses]
-    Test --> Review
-    Review --> Publish[Approved immutable publication]
-```
-
-1. **Provide and pin the authoritative MCP repository.** This is the first
-   mandatory input to any seed. Before proposing Skills, Capabilities, or
-   bindings, the model must inspect the MCP server's implementation to establish
-   its registered tools, input contracts, result shapes, errors, limits, and
-   security behaviour. Give the model access to an exact repository commit or
-   release, including tool registration code, schemas, tests, fixtures, and
-   documentation. Record both the repository and revision so the analysis can
-   be reproduced and reviewed when the MCP server changes. If the source is not
-   available, generation should stop rather than infer a provider contract.
-2. **Supply MOSAIC's contracts.** Provide the current Integration manifest and
-   Skill-package schemas, representative approved packages, and the existing
-   Capability catalogue. The model should reuse an existing Capability when it
-   describes the same semantic outcome rather than create a provider-specific
-   duplicate.
-3. **Add operational context.** Supply platform documentation, runbooks,
-   common support questions, known failure modes, and the permitted safety
-   boundary. Use that material to identify useful resource and state
-   inspections, common investigations, and any other genuinely useful benign
-   outcomes. This prevents the seed from becoming a mechanical copy of the MCP
-   tool list.
-4. **Provide deployment facts.** Supply canonical Targets, endpoint topology,
-   provider types, target aliases, and routing constraints. Credentials must
-   never be included. A reviewable example may use clearly identified
-   placeholders when deployment values are not yet known. Those values must be
-   reported as unresolved, and the result must not be described as
-   activation-ready.
-5. **Define the safety boundary.** Classify every considered provider operation
-   as observational, active probing, mutating, or sensitive. Exclude anything
-   outside the approved boundary. When an MCP tool accepts a general command,
-   query, or script, never expose that input directly as a Capability. Bind
-   only reviewed fixed operations or narrowly templated operations whose
-   caller-supplied values are validated as data. Protect Target selectors in
-   Routing, require exact resource scope where practical, and exclude
-   wildcards when they could create broad or unbounded access.
-6. **Generate the candidate seed.** Ask the model to identify common tasks,
-   create globally unique Skills, declare their Capability requirements, and
-   generate the corresponding Capabilities and bindings. Start with the
-   smallest useful read-only surface.
-7. **Validate mechanically.** Validate file structure, schemas, names,
-   references, tool allowlists, argument sources, Routing, JSON Pointers,
-   response limits, and uniqueness before attempting execution. Test accepted
-   semantic values as well as wildcards, separators, newlines, and command or
-   query injection attempts wherever templates are used.
-8. **Test against the MCP server.** Exercise representative normal, empty,
-   error, and oversized responses in a safe environment. Confirm that each
-   result binding extracts the intended Evidence and that the proposed Skills
-   can complete their stated outcomes. Treat provider documentation and source
-   disagreements as findings: the registered implementation is authoritative
-   for tool names and runtime contracts, while documentation remains important
-   evidence of intended behaviour.
-9. **Review and publish.** The owning platform team confirms operational
-   usefulness, permissions, terminology, safety, and omissions before the
-   Skill packages and Integration manifest are versioned and published.
-
-### Constraining broad provider tools
-
-Some MCP servers expose a broad command, query, or script interface rather than
-one narrowly scoped tool per operation. Such a tool can still support a benign
-seed, but the provider tool itself must never become a general Capability.
-
-For each approved outcome, the Integration manifest should instead bind the
-broad tool to either:
-
-- a complete fixed read-only operation; or
-- a reviewed read-only template containing only narrowly validated semantic
-  values, such as an exact resource name.
-
-The model must not be able to select the command verb, supply the complete
-command or query, override a protected Target selector, append additional
-syntax, or replace exact scope with a wildcard. Validation patterns should use
-the smallest safe character set and length supported by the initial platform
-scope. Broader valid names can be added later through a reviewed configuration
-change.
-
-This is defence in depth rather than a substitute for provider security. The
-MCP service identity should still receive only the platform permissions needed
-for the approved operations. Active probes, mutations, sensitive-data access,
-and broad unbounded reads remain excluded unless a later policy explicitly
-governs them.
-
-When deployment facts are missing, the generator may produce a clearly named
-example manifest with placeholder endpoints, Targets, and protected routing
-values. The separate generation report must list every placeholder and the
-candidate must remain unpublished until the owning team supplies and validates
-the real values.
-
-### Where this approach works best
-
-| Platform type | Expected seeding quality |
-| --- | --- |
-| Widely used vendor or open-source platform | Strong starting point. Public platform conventions and operational knowledge can complement direct inspection of the authoritative MCP source. Repository code and supplied schemas still take precedence over model memory. |
-| Internally developed platform with good runbooks and tests | Useful when the model receives the source, domain terminology, common support tasks, failure modes, and representative responses. More owner input and review will normally be required. |
-| Internally developed platform with little documentation | The model can inventory tools but cannot reliably infer organisational intent or the most valuable investigations. Begin by capturing runbooks and expected outcomes with domain experts. |
-
-### Starter prompt
-
-The following prompt can be adapted for a coding model with access to the MCP
-repository and a workspace containing the MOSAIC schemas and examples:
-
-```text
-Create a candidate MOSAIC platform seed for <platform name>.
-
-Authoritative inputs:
-- MCP repository: <path or URL>
-- MCP revision: <exact commit or release>
-- MOSAIC Integration manifest schema and current approved manifest: <paths>
-- MOSAIC Skill-package schema and approved examples: <paths>
-- Platform documentation and runbooks: <paths or URLs>
-- Representative MCP responses or test fixtures: <paths>
-- Canonical Targets, provider endpoints, and Routing constraints: <details>
-- Approved safety boundary: <for example, read-only investigation only>
-
-Inspect the MCP implementation rather than relying on tool names alone. Locate
-the registered tools, exact input schemas, result envelopes, error behaviour,
-pagination or size controls, authentication assumptions, tests, and examples.
-Record the exact source revision and every authoritative source used. Record
-disagreements between documentation and the registered implementation; use the
-implementation as the authority for actual tool names and runtime contracts.
-
-Identify a coherent starter set of common operational outcomes supported by the
-available tools. Use resource and state inspection plus investigation as the
-two predominant themes, while including other useful benign outcomes where
-the evidence supports them. Do not treat this as an exhaustive taxonomy and do
-not create one Skill or Capability per tool. Begin with user and operator
-outcomes, reuse existing provider-neutral Capabilities where their semantics
-match, and propose new Capabilities only when necessary.
-
-Generate:
-1. An Integration manifest candidate using schema_version 3, containing only
-   verified Targets, Providers, Capabilities, Capability bindings, Routing,
-   argument mappings, result extraction rules, and bounded safety limits.
-2. A package for each proposed Skill containing SKILL.md and mosaic.yaml.
-   Each package must use a globally unique Skill name, SKILL.md must remain
-   provider-independent, and mosaic.yaml must declare complete required and
-   optional Capability requirements.
-3. A generation report describing the common tasks selected, tools considered,
-   tools excluded, read or mutation classification, Capability reuse decisions,
-   source provenance, documentation discrepancies, assumptions, placeholders,
-   and unresolved inputs.
-4. A validation report covering schemas, cross-references, tool allowlists,
-   argument bindings, Routing, result extraction, limits, and any sandbox tests.
-
-Rules:
-- Treat the pinned repository and supplied contracts as authoritative; never
-  substitute model memory for conflicting source evidence.
-- Do not invent endpoints, Targets, tools, arguments, response fields, JSON
-  Pointers, authentication behaviour, limits, or provider guarantees.
-- Do not include credentials or secrets.
-- Prefer the smallest useful read-only tool surface.
-- Classify considered operations as observational, active probing, mutating,
-  or sensitive, and include only operations within the approved boundary.
-- Never expose a general command, query, or script input as a Capability.
-  Use reviewed fixed operations or narrowly templated read-only operations.
-- Treat every caller-supplied template value as data: validate its type,
-  length, and smallest safe character set; reject wildcards, separators,
-  newlines, and syntax injection unless explicitly required and governed.
-- Make scope arguments mandatory when omission could broaden access.
-- Keep provider tool names and provider-specific instructions out of SKILL.md.
-- Put policy-controlled values in fixed bindings and protected shared-endpoint
-  target selectors in Routing.
-- Declare explicit response-character and collection-item limits. Never rely on
-  silent truncation.
-- If an authoritative deployment fact is missing, use a clearly marked
-  placeholder only in an example candidate, put it in the separate generation
-  report, and do not describe the artefact as activation-ready.
-- Do not modify or publish an existing approved catalogue. Write the candidate
-  files to a separate review directory.
-
-Before completing, verify that every Skill requirement resolves to a defined
-Capability, every Capability binding uses an allowlisted Provider tool, every
-Target resolves unambiguously through Routing, and every result binding has
-been checked against a representative response. For every templated binding,
-also demonstrate that valid values are accepted and wildcard or injection
-attempts are rejected.
-```
-
-AI-assisted generation accelerates discovery and authoring; it does not replace
-schema validation, live contract testing, security review, or approval by the
-team responsible for the platform.
 
 ## Validation and failure behaviour
 
