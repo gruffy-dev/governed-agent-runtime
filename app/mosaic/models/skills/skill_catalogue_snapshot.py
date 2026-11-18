@@ -3,6 +3,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ..capabilities.capability_runtime_snapshot import CapabilityRuntimeSnapshot
 from .skill import Skill
 from .skill_catalogue_group import SkillCatalogueGroup
 
@@ -29,15 +30,22 @@ class SkillCatalogueSnapshot(BaseModel):
         default=(),
         description='Current hierarchy groups expanded during assignment.',
     )
+    capability_runtime_snapshot: CapabilityRuntimeSnapshot | None = Field(
+        default=None,
+        description='Validated capability configuration from the same commit.',
+        exclude=True,
+        repr=False,
+    )
 
     @model_validator(mode='after')
     def validate_snapshot(self) -> Self:
         """
-        Validate timestamp awareness and unique Skill and group references.
+        Validate catalogue identities and references within the release.
 
         :return: Validated immutable catalogue snapshot.
 
-        :raises ValueError: If timestamps, Skills or groups are invalid.
+        :raises ValueError: If catalogue identities or capability references
+            are invalid.
         """
         if self.loaded_at.tzinfo is None:
             raise ValueError('loaded_at must be timezone-aware.')
@@ -57,5 +65,20 @@ class SkillCatalogueSnapshot(BaseModel):
             raise ValueError(
                 'Catalogue groups must reference available Skills.'
             )
+
+        if self.capability_runtime_snapshot is not None:
+            capability_names = {
+                capability.name
+                for capability in self.capability_runtime_snapshot.capabilities
+            }
+            for skill in self.skills:
+                declared_names = {
+                    *skill.required_capability_names,
+                    *skill.optional_capability_names,
+                }
+                if not declared_names.issubset(capability_names):
+                    raise ValueError(
+                        'Skill capability references must exist in the release.'
+                    )
 
         return self

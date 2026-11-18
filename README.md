@@ -583,11 +583,24 @@ when a cached catalogue exists.
 | `LLM_MODEL` | Model selected through that access layer. |
 | `AGENT_IDENTIFIER` | Trusted MOSAIC agent identity sent as `x-agent-id`. This is not end-user identity. |
 
-#### Skill catalogue connection
+#### Skills and capability configuration
+
+The Git repository supplies both `skills/` and
+`config/capability-runtime-snapshot.json`. Startup validates both from the same
+commit, including required and optional capability references in each Skill.
+The catalogue is activated only when the complete release validates. If a fetch
+or candidate validation fails, the existing cache may supply the previous valid
+pair. Without a valid release, startup fails.
+
+Pin `MOSAIC_SKILLS_REPOSITORY_REVISION` to the approved commit for a deployment.
+Restart the backend to activate a new release. To roll back, select the previous
+commit and restart. The Git-backed runtime ignores
+`MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_PATH`; it needs no separate capability file
+mount. Endpoint URLs come from the manifest. Credentials remain runtime inputs.
 
 | Environment variable | Purpose |
 | --- | --- |
-| `MOSAIC_SKILLS_REPOSITORY_URL` | URL of the Git skill catalogue. |
+| `MOSAIC_SKILLS_REPOSITORY_URL` | URL of the Git repository containing Skills and the capability manifest. |
 | `MOSAIC_SKILLS_REPOSITORY_REVISION` | Branch, tag, or revision to activate; defaults to `main`. |
 | `MOSAIC_SKILLS_REPOSITORY_CACHE_PATH` | Deployment-local bare Git cache. |
 | `MOSAIC_SKILLS_REPOSITORY_ACCESS_TOKEN` | Repository Bearer token; required and never stored in the active Skill catalogue or Git cache. |
@@ -600,7 +613,7 @@ user-facing concept is the Integration manifest.
 
 | Environment variable | Purpose |
 | --- | --- |
-| `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_PATH` | Absolute path of the active Integration manifest. |
+| `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_PATH` | Standalone file-loader setting. Ignored by the Git-backed agent. |
 | `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_MAXIMUM_BYTES` | Maximum accepted Integration manifest size in bytes. It defaults to `2000000` bytes and may be set to a positive value up to the current implementation-enforced maximum of `10000000` bytes. |
 | `MOSAIC_CAPABILITY_RESULT_MAXIMUM_RESPONSE_CHARACTERS` | Deployment-wide ceiling for one encoded Provider response. |
 | `MOSAIC_CAPABILITY_RESULT_MAXIMUM_COLLECTION_ITEMS` | Deployment-wide ceiling for one selected Evidence collection. |
@@ -729,8 +742,10 @@ published catalogue. The GUI editor is a separate follow-up.
 
 ## The capability runtime snapshot
 
-Set `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_PATH` to the absolute path of the JSON
-file to load. The complete file is validated at startup and rejected if it is
+The Git-backed agent loads `config/capability-runtime-snapshot.json` from the
+same commit as the Skills. The standalone file loader continues to accept an
+absolute `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_PATH` for explicit file-loading
+callers. The complete file is validated at startup and rejected if it is
 missing, malformed, internally inconsistent, or references an unapproved
 provider/tool combination. The file is also rejected when it exceeds
 `MOSAIC_CAPABILITY_RUNTIME_SNAPSHOT_MAXIMUM_BYTES`. This limit defaults to
