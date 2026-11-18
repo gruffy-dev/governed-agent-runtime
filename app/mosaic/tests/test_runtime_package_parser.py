@@ -110,8 +110,15 @@ class TestRuntimePackageParser(unittest.TestCase):
             self._write_release(root, '1.0.0', 'release-1')
             with patch.dict(
                 os.environ, {'MOSAIC_CAPABILITY_RESULT_MAXIMUM_COLLECTION_ITEMS': '1'}
-            ), self.assertRaisesRegex(RuntimeError, 'deployment ceiling'):
+            ), self.assertRaisesRegex(RuntimeError, 'result collection limit exceeds'):
                 RuntimePackageParser().parse_catalogue(root, 'a' * 40)
+
+            with patch.dict(
+                os.environ,
+                {'MOSAIC_CAPABILITY_RESULT_MAXIMUM_COLLECTION_ITEMS': '2000'},
+            ):
+                snapshot = RuntimePackageParser().parse_catalogue(root, 'a' * 40)
+            self.assertEqual(snapshot.capability_runtime_snapshot.snapshot_id, 'release-1')
 
     def test_invalid_snapshot_schema_is_rejected(self) -> None:
         with TemporaryDirectory() as directory:

@@ -1,20 +1,12 @@
-"""File-backed provider for capability-runtime snapshots."""
-
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ...models.capabilities.capability_runtime_snapshot import (
-    CapabilityRuntimeSnapshot,
-)
-from ...models.capabilities.capability_runtime_snapshot_configuration import (
-    CapabilityRuntimeSnapshotConfiguration,
-)
+from ...models.capabilities.capability_runtime_snapshot import CapabilityRuntimeSnapshot
+from ...models.capabilities.capability_runtime_snapshot_configuration import CapabilityRuntimeSnapshotConfiguration
 
 
 class FileCapabilityRuntimeSnapshotProvider(BaseModel):
-    """Load and validate a bounded deployment-managed JSON snapshot."""
-
     model_config = ConfigDict(
         extra='forbid',
         frozen=True,
@@ -25,14 +17,13 @@ class FileCapabilityRuntimeSnapshotProvider(BaseModel):
     )
 
     def load(self) -> CapabilityRuntimeSnapshot:
-        """Read one complete snapshot and fail startup on any defect.
+        """
+        Read and validate one bounded capability snapshot.
 
-        Returns:
-            Fully validated immutable capability-runtime snapshot.
+        :return: Validated immutable capability snapshot.
 
-        Raises:
-            RuntimeError: If the snapshot is unreadable, oversized, malformed,
-                or inconsistent with the supported snapshot schema.
+        :raises RuntimeError: If the file is unreadable, oversized, malformed,
+            or violates the snapshot schema or deployment limits.
         """
         snapshot_path = self.configuration.snapshot_path.expanduser()
         try:
@@ -70,14 +61,13 @@ class FileCapabilityRuntimeSnapshotProvider(BaseModel):
         self,
         snapshot: CapabilityRuntimeSnapshot,
     ) -> None:
-        """Reject result bindings above deployment-wide safety ceilings.
+        """
+        Reject result bindings above deployment-wide safety ceilings.
 
-        Args:
-            snapshot: Structurally valid capability-runtime snapshot.
+        :param snapshot: Structurally valid capability snapshot.
 
-        Raises:
-            RuntimeError: If any binding exceeds the configured response or
-                collection ceiling.
+        :raises RuntimeError: If a result binding exceeds the configured
+            response or collection ceiling.
         """
         for capability in snapshot.capabilities:
             for provider_binding in capability.provider_bindings:

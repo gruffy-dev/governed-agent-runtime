@@ -1,27 +1,20 @@
-import shutil
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from mosaic.components.capabilities.capability_catalogue_and_resolver import CapabilityCatalogueAndResolver
-from mosaic.components.capabilities.file_capability_runtime_snapshot_provider import FileCapabilityRuntimeSnapshotProvider
 from mosaic.components.capabilities.mcp_capability_result_processor import McpCapabilityResultProcessor
 from mosaic.components.skills.skill_package_parser import SkillPackageParser
 from mosaic.models.capabilities.capability_runtime_snapshot import CapabilityRuntimeSnapshot
-from mosaic.models.capabilities.capability_runtime_snapshot_configuration import CapabilityRuntimeSnapshotConfiguration
 
 
 class TestSplunkSkillSeed(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(__file__).resolve().parents[3]
-        self.primary = FileCapabilityRuntimeSnapshotProvider(
-            configuration=CapabilityRuntimeSnapshotConfiguration(
-                snapshot_path=self.root
-                / 'config'
-                / 'local'
-                / 'capability-runtime-snapshot.json'
-            )
-        ).load()
+        fixture_path = Path(__file__).parent / 'fixtures' / 'splunk_skill_seed.json'
+        fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
+        self.skill_files = fixture['skills']
+        self.primary = CapabilityRuntimeSnapshot.model_validate(fixture['snapshot'])
         providers = tuple(
             provider for provider in self.primary.providers
             if provider.provider_type in ('splunk', 'splunk-workloads')
@@ -245,17 +238,13 @@ class TestSplunkSkillSeed(unittest.TestCase):
             )
 
     def test_function_hierarchy_skill_ids_and_cross_domain_references(self) -> None:
-        source = self.root / 'mosaic-skill-catalogue' / 'skills'
-        packages = [
-            *sorted((source / 'splunk').glob('*/*')),
-            source / 'container-platforms' / 'investigations'
-            / 'investigate-openshift-application-logs',
-        ]
-        packages = [path for path in packages if (path / 'SKILL.md').is_file()]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for package in packages:
-                shutil.copytree(package, root / 'skills' / package.relative_to(source))
+            for relative_path, content in self.skill_files.items():
+                destination = root / 'skills' / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(content, encoding='utf-8')
+            packages = [path.parent for path in (root / 'skills').rglob('SKILL.md')]
             catalogue = SkillPackageParser().parse_catalogue(root, 'a' * 40)
         self.assertEqual(len(catalogue.skills), 8)
         self.assertEqual(
