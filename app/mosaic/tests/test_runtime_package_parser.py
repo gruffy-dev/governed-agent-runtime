@@ -152,11 +152,54 @@ class TestRuntimePackageParser(unittest.TestCase):
             f'version: {version}\nkind: procedural\n'
             'required_capability_names: [inventory.objects.count]\n'
         )
-        data = json.loads(
-            (Path(__file__).resolve().parents[3]
-             / 'config/capability-runtime-snapshot.example.json').read_text()
-        )
-        data['snapshot_id'] = snapshot_id
+        data = {
+            'schema_version': 3,
+            'snapshot_id': snapshot_id,
+            'targets': [],
+            'providers': [
+                {
+                    'provider_name': 'inventory-mcp',
+                    'provider_type': 'inventory',
+                    'transport': 'streamable_http',
+                    'header_strategy': 'ada_request_context',
+                    'base_url': 'https://mcp.example.com/mcp',
+                    'allowed_tool_names': ['objects_list'],
+                    'routing': {'mode': 'target_independent'},
+                }
+            ],
+            'capabilities': [
+                {
+                    'name': 'inventory.objects.count',
+                    'description': 'Count objects within one scope.',
+                    'provider_bindings': [
+                        {
+                            'provider_type': 'inventory',
+                            'tool_name': 'objects_list',
+                            'read_only': True,
+                            'argument_bindings': [
+                                {
+                                    'tool_argument_name': 'scope',
+                                    'source': 'semantic',
+                                    'semantic_argument_names': ['scope'],
+                                    'required': True,
+                                }
+                            ],
+                            'result_binding': {
+                                'content_source': 'text_content',
+                                'content_media_type': 'application/json',
+                                'content_block_index': 0,
+                                'json_pointer': '/items',
+                                'operation': 'count',
+                                'output_field': 'object_count',
+                                'evidence_tool_argument_names': ['scope'],
+                                'maximum_response_characters': 500000,
+                                'maximum_collection_items': 2000,
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
         configuration = root / 'config/capability-runtime-snapshot.json'
         configuration.parent.mkdir(exist_ok=True)
         configuration.write_text(json.dumps(data))
