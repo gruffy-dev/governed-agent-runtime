@@ -151,7 +151,8 @@ is created on the first non-empty message, not on login, refresh or clicking
 New conversation. Existing empty conversations are retained; no history is deleted.
 Dash builds the sidebar rows from conversation IDs. A browser callback fills
 in titles and dates from the API response. Titles stay in the browser.
-When a completed assistant response mentions Mermaid, its transcript text is sent
+When a completed assistant response mentions Mermaid or contains a code fence,
+its transcript text is sent
 to a stateless Python Dash callback for diagram presentation. The callback receives
 user and assistant text and a browser generation number. It keeps no server-side
 transcript state and does not use or forward authentication credentials. Skills are grouped by the most-specific available
@@ -176,7 +177,12 @@ Reasoning and raw tool/SDK metadata are not shown.
 
 ### Mermaid diagrams
 
-MOSAIC answers can contain fenced `mermaid` blocks. The GUI renders complete
+MOSAIC answers can contain fenced `mermaid` blocks. Unlabelled fenced blocks
+are also recognised when their first declaration is `flowchart` or `graph` with
+a direction, `sequenceDiagram`, `classDiagram`, `stateDiagram`,
+`stateDiagram-v2` or `erDiagram`. Leading blank lines and Mermaid comments are
+allowed. Other language labels, ambiguous content, incomplete fences and unfenced
+text remain unchanged. The GUI renders complete
 blocks after the response finishes and when saved history is opened. Text keeps
 streaming through the existing browser transport. The original response and
 Mermaid syntax remain in the backend conversation history.

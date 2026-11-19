@@ -36,6 +36,43 @@ class TestTranscriptRenderer(unittest.TestCase):
                 self.assertEqual(parts[0].children, text)
                 self.assertFalse(parts[0].dangerously_allow_html)
 
+    def test_unlabelled_diagrams_retain_exact_source(self) -> None:
+        for declaration in (
+            'flowchart TD', 'graph LR;', 'sequenceDiagram', 'classDiagram',
+            'stateDiagram', 'stateDiagram-v2', 'erDiagram',
+        ):
+            for fence in ('```', '~~~~'):
+                with self.subTest(declaration=declaration, fence=fence):
+                    source = '\r\n%% Diagram comment\r\n' + declaration + '\r\n  A --> B\r\n'
+                    parts = TranscriptRenderer._parts(f'{fence}\r\n{source}{fence}\r\n', 'unlabelled')
+                    diagram = parts[0].children[0].children
+                    self.assertIsInstance(diagram, Mermaid)
+                    self.assertEqual(diagram.chart, source)
+                    self.assertEqual(parts[0].children[-1].children[1].children[1].content, source)
+
+    def test_ambiguous_and_explicitly_labelled_code_is_not_inferred(self) -> None:
+        for text in (
+            '```python\nflowchart LR\nA --> B\n```',
+            '```json\n{"diagram": "sequenceDiagram"}\n```',
+            '```\nflowchart is a useful concept\n```',
+            '```\ngraph\nA --> B\n```',
+            '```\nsequenceDiagramExample\n```',
+            '```\nSome explanation\nflowchart LR\nA --> B\n```',
+            '```\nflowchart LR\nA --> B',
+            'flowchart LR\nA --> B',
+        ):
+            with self.subTest(text=text):
+                parts = TranscriptRenderer._parts(text, 'ordinary')
+                self.assertEqual(len(parts), 1)
+                self.assertIsInstance(parts[0], dcc.Markdown)
+                self.assertEqual(parts[0].children, text)
+
+    def test_unlabelled_diagrams_keep_configuration_safeguards(self) -> None:
+        source = '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA --> B\n'
+        card = TranscriptRenderer._parts('```\n' + source + '```', 'unsafe')[0]
+        self.assertEqual(len(card.children), 2)
+        self.assertEqual(card.children[-1].children[1].children[1].content, source)
+
     def test_multiple_diagrams_have_independent_copy_controls(self) -> None:
         parts = TranscriptRenderer._parts(
             '~~~mermaid\nflowchart LR\nA --> B\n~~~\n'

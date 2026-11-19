@@ -410,7 +410,7 @@ export class WorkspaceController {
         const children = this.#messages.map(message => this.#element("Div", {className: "message message-" + message.role, children: [this.#element("Div", {className: "message-label", children: message.role === "user" ? "You" : "MOSAIC"}), message.role === "user" ? this.#element("Div", {className: "message-body", children: message.text}) : message.text ? this.#element("Markdown", {className: "message-body", children: message.text, dangerously_allow_html: false, link_target: "_blank", mathjax: false, highlight_config: {theme: "light"}}, "dash_core_components") : this.#element("Div", {className: "message-body", children: ""})]}));
         this.#props("message-transcript", {children});
         this.#scrollMessages();
-        if (!this.#streamController && this.#messages.some(message => message.role === "assistant" && /\bmermaid\b/i.test(message.text))) {
+        if (!this.#streamController && this.#messages.some(message => message.role === "assistant" && /\bmermaid\b|(?:^|\n) {0,3}(?:`{3,}|~{3,})/i.test(message.text))) {
             this.#props("transcript-render-request", {data: {sequence, messages: this.#messages.map(message => ({role: message.role, text: message.text}))}});
         }
     }

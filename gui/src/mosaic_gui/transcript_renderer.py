@@ -113,16 +113,35 @@ class TranscriptRenderer:
             )
             if closing is None:
                 break
-            if language.strip().casefold() == 'mermaid':
+            source = ''.join(lines[cursor + 1:closing])
+            if language.strip().casefold() == 'mermaid' or (
+                not language.strip() and TranscriptRenderer._is_unlabelled_diagram(source)
+            ):
                 if start < cursor:
                     children.append(TranscriptRenderer._markdown(''.join(lines[start:cursor])))
-                source = ''.join(lines[cursor + 1:closing])
                 children.append(TranscriptRenderer._diagram(source, f'{prefix}-{cursor}'))
                 start = closing + 1
             cursor = closing + 1
         if start < len(lines):
             children.append(TranscriptRenderer._markdown(''.join(lines[start:])))
         return children
+
+    @staticmethod
+    def _is_unlabelled_diagram(source: str) -> bool:
+        """
+        Recognise an explicit Mermaid declaration in an unlabelled fenced block.
+
+        :param source: Unmodified content between complete Markdown fence lines.
+
+        :return: Whether the first declaration identifies a supported diagram.
+        """
+        return re.match(
+            r'\A(?:[ \t]*(?:%%[^\r\n]*)?\r?\n)*[ \t]*'
+            r'(?:(?:flowchart|graph)[ \t]+(?:TB|TD|BT|RL|LR)'
+            r'|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram)'
+            r'[ \t]*;?[ \t]*(?:\r?\n|$)',
+            source,
+        ) is not None
 
     @staticmethod
     def _markdown(text: str) -> dcc.Markdown:

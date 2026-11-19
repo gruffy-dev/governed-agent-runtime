@@ -127,6 +127,20 @@ class TestWorkspaceController {
                 assert.equal(fixture.element("transcript-render-result").data, null);
             } finally {fixture.restore();}
         });
+        test("unlabelled code fences reach Python rendering without a Mermaid keyword", async () => {
+            for (const source of ["```\nflowchart LR\nA --> B\n```", "~~~\nsequenceDiagram\nA->>B: Hello\n~~~"]) {
+                const fixture = this.setup({
+                    messages: [{role: "assistant", text: source}],
+                    conversations: [{conversation_id: "synthetic-chat", last_activity_at: "2026-01-01", title: "Diagram"}],
+                });
+                try {
+                    await this.settle();
+                    fixture.click("conversation-synthetic-chat");
+                    await this.settle();
+                    assert.equal(fixture.element("transcript-render-request").data.messages[0].text, source);
+                } finally {fixture.restore();}
+            }
+        });
         test("Mermaid rendering waits for stream completion and preserves source", async () => {
             let stream;
             const messages = [];
