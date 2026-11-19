@@ -187,8 +187,10 @@ blocks after the response finishes and when saved history is opened. Text keeps
 streaming through the existing browser transport. The original response and
 Mermaid syntax remain in the backend conversation history.
 
-Each diagram fits the available panel space and has a native Dash zoom slider
-(50–200%; **Fit** restores responsive sizing). Enlarged diagrams scroll within
+Each diagram fits the available panel space and has native Dash **Zoom in**,
+**Zoom out** and **Fit** buttons. Each zoom step multiplies or divides the current
+scale by 1.25, with no fixed zoom-in ceiling. **Fit** restores responsive sizing.
+Enlarged diagrams scroll within
 their own area, with scrollbars only when the chart exceeds the viewing area.
 Each diagram has a **Source** disclosure and a **Copy** control. Copy
 returns the original diagram text between the fence lines, including whitespace.

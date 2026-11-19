@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from dash import MATCH, Dash, Input, Output, dcc, html
+from dash import MATCH, Dash, Input, Output, State, ctx, dcc, html
 from dash.development.base_component import Component
 from dash_extensions import Mermaid
 
@@ -21,7 +21,10 @@ class TranscriptRenderer:
         )(TranscriptRenderer.render)
         application.callback(
             Output({'type': 'mermaid-viewport', 'index': MATCH}, 'style'),
-            Input({'type': 'mermaid-zoom', 'index': MATCH}, 'value'),
+            Input({'type': 'mermaid-zoom-in', 'index': MATCH}, 'n_clicks'),
+            Input({'type': 'mermaid-zoom-out', 'index': MATCH}, 'n_clicks'),
+            Input({'type': 'mermaid-zoom-fit', 'index': MATCH}, 'n_clicks'),
+            State({'type': 'mermaid-viewport', 'index': MATCH}, 'style'),
         )(TranscriptRenderer.zoom_style)
         application.clientside_callback(
             """
@@ -36,16 +39,31 @@ class TranscriptRenderer:
         )
 
     @staticmethod
-    def zoom_style(value: float | None) -> dict[str, float]:
+    def zoom_style(
+        zoom_in: int | None,
+        zoom_out: int | None,
+        fit: int | None,
+        style: dict[str, float] | None,
+    ) -> dict[str, float]:
         """
-        Scale a diagram relative to the available panel space.
+        Enlarge or reduce a diagram relative to its current scale, or fit it.
 
-        :param value: Zoom percentage selected using the diagram control.
+        :param zoom_in: Click count from the diagram's Zoom in button.
+        :param zoom_out: Click count from the diagram's Zoom out button.
+        :param fit: Click count from the diagram's Fit button.
+        :param style: Current scale applied to this diagram's viewport.
 
-        :return: CSS scale applied to this diagram's viewport.
+        :return: Relative scale, or the responsive fitted scale after Fit.
         """
-        percentage = value if isinstance(value, (int, float)) else 100
-        return {'--mermaid-zoom': max(50, min(200, percentage)) / 100}
+        action = ctx.triggered_id
+        scale = (style or {}).get('--mermaid-zoom', 1)
+        if isinstance(action, dict) and action['type'] == 'mermaid-zoom-in':
+            scale *= 1.25
+        elif isinstance(action, dict) and action['type'] == 'mermaid-zoom-out':
+            scale /= 1.25
+        else:
+            scale = 1
+        return {'--mermaid-zoom': scale}
 
     @staticmethod
     def render(request: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -194,12 +212,20 @@ class TranscriptRenderer:
                     id={'type': 'mermaid-viewport', 'index': identifier},
                 ),
                 html.Div([
-                    html.Span('Zoom'),
-                    dcc.Slider(
-                        id={'type': 'mermaid-zoom', 'index': identifier},
-                        min=50, max=200, step=10, value=100,
-                        marks={50: '50%', 100: 'Fit', 150: '150%', 200: '200%'},
-                        tooltip={'placement': 'bottom', 'always_visible': False},
+                    html.Button(
+                        'Zoom out', id={'type': 'mermaid-zoom-out', 'index': identifier},
+                        n_clicks=0, className='btn btn-outline-primary btn-sm',
+                        title='Reduce the current chart scale',
+                    ),
+                    html.Button(
+                        'Zoom in', id={'type': 'mermaid-zoom-in', 'index': identifier},
+                        n_clicks=0, className='btn btn-outline-primary btn-sm',
+                        title='Enlarge the current chart scale',
+                    ),
+                    html.Button(
+                        'Fit', id={'type': 'mermaid-zoom-fit', 'index': identifier},
+                        n_clicks=0, className='btn btn-outline-primary btn-sm',
+                        title='Fit the chart to the available space',
                     ),
                 ], className='mermaid-zoom-control'),
             ])

@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from dash import dcc
 from dash_extensions import Mermaid
@@ -85,16 +87,35 @@ class TestTranscriptRenderer(unittest.TestCase):
         self.assertIn('flowchart', copies[0].content)
         self.assertIn('sequenceDiagram', copies[1].content)
 
-    def test_zoom_is_bounded_and_each_diagram_has_an_independent_control(self) -> None:
-        for value, expected in ((None, 1), (50, 0.5), (150, 1.5), (200, 2), (999, 2), (-10, 0.5)):
-            with self.subTest(value=value):
-                self.assertEqual(TranscriptRenderer.zoom_style(value), {'--mermaid-zoom': expected})
+    def test_relative_zoom_exceeds_previous_ceiling_and_fit_resets_scale(self) -> None:
+        style = None
+        with patch('mosaic_gui.transcript_renderer.ctx', SimpleNamespace(
+            triggered_id={'type': 'mermaid-zoom-in', 'index': 'one'},
+        )):
+            for clicks in range(1, 13):
+                style = TranscriptRenderer.zoom_style(clicks, 0, 0, style)
+        self.assertGreater(style['--mermaid-zoom'], 8)
+        with patch('mosaic_gui.transcript_renderer.ctx', SimpleNamespace(
+            triggered_id={'type': 'mermaid-zoom-out', 'index': 'one'},
+        )):
+            for clicks in range(1, 13):
+                style = TranscriptRenderer.zoom_style(12, clicks, 0, style)
+            self.assertAlmostEqual(style['--mermaid-zoom'], 1)
+            self.assertAlmostEqual(TranscriptRenderer.zoom_style(12, 13, 0, style)['--mermaid-zoom'], 0.8)
+        with patch('mosaic_gui.transcript_renderer.ctx', SimpleNamespace(
+            triggered_id={'type': 'mermaid-zoom-fit', 'index': 'one'},
+        )):
+            self.assertEqual(TranscriptRenderer.zoom_style(12, 0, 1, {'--mermaid-zoom': 15}), {'--mermaid-zoom': 1})
+
+    def test_each_diagram_has_independent_zoom_controls(self) -> None:
         cards = [TranscriptRenderer._diagram('flowchart LR\nA --> B', name) for name in ('one', 'two')]
         for card in cards:
             viewport = card.children[0]
-            slider = card.children[1].children[1]
-            self.assertEqual(viewport.id['index'], slider.id['index'])
-            self.assertEqual(slider.value, 100)
+            buttons = card.children[1].children
+            self.assertEqual({button.id['index'] for button in buttons}, {viewport.id['index']})
+            self.assertEqual({button.id['type'] for button in buttons}, {
+                'mermaid-zoom-in', 'mermaid-zoom-out', 'mermaid-zoom-fit',
+            })
         self.assertNotEqual(cards[0].children[0].id, cards[1].children[0].id)
 
     def test_unsafe_configuration_and_oversized_diagrams_retain_source(self) -> None:

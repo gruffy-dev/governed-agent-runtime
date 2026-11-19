@@ -93,21 +93,11 @@
 .mermaid-zoom-control {
     display: flex;
     align-items: center;
-    gap: 14px;
-    max-width: 360px;
+    gap: 8px;
+    flex-wrap: wrap;
     margin: 8px 0 16px;
     color: #52607f;
     font-size: 12px;
-}
-
-.mermaid-zoom-control > div {
-    flex: 1;
-    min-width: 0;
-}
-
-.mermaid-zoom-control .rc-slider-mark-text {
-    white-space: nowrap;
-    overflow-wrap: normal;
 }
 
 .mermaid-card:not(:has(.mermaid-visual svg)) .mermaid-zoom-control {
