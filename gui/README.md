@@ -195,6 +195,8 @@ Enlarged diagrams scroll within
 their own area, with scrollbars only when the chart exceeds the viewing area.
 Each diagram has a **Source** disclosure and a **Copy** control. Copy
 returns the original diagram text between the fence lines, including whitespace.
+**Download SVG** saves the full rendered diagram at its original scale, including
+parts outside the visible area when zoomed in.
 Invalid diagrams retain both controls and show a fallback message. The underlying
 component may also report a syntax error in the browser console. Per-diagram
 configuration directives and interactive `click` commands are displayed as source.

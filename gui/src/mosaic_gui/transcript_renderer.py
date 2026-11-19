@@ -248,6 +248,10 @@ class TranscriptRenderer:
                                 id=f'mermaid-copy-{identifier}', content=source,
                                 title='Copy Mermaid source', className='mermaid-copy',
                             ),
+                            html.Button(
+                                'Download SVG', type='button',
+                                className='btn btn-link btn-sm mermaid-download',
+                            ),
                         ], className='mermaid-copy-control'),
                     ],
                     className='mermaid-tools',

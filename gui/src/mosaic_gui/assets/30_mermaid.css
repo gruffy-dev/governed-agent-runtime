@@ -64,7 +64,7 @@
 .mermaid-tools summary {
     cursor: pointer;
     font-weight: 600;
-    padding-right: 90px;
+    padding-right: 180px;
 }
 
 .message-body .mermaid-source {
@@ -97,6 +97,16 @@
 .mermaid-copy {
     cursor: pointer;
     color: #1e2a78;
+}
+
+.mermaid-download {
+    padding: 0;
+    font-size: inherit;
+    color: #1e2a78;
+}
+
+.mermaid-card:not(:has(.mermaid-visual svg)) .mermaid-download {
+    display: none;
 }
 
 .mermaid-zoom-control {
