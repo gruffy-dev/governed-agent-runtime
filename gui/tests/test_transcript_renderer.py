@@ -17,8 +17,8 @@ class TestTranscriptRenderer(unittest.TestCase):
         self.assertEqual(len(parts), 3)
         self.assertIsInstance(parts[0], dcc.Markdown)
         self.assertEqual(parts[0].children, '# Result\r\n\r\n')
-        self.assertIsInstance(parts[1].children[0], Mermaid)
-        self.assertEqual(parts[1].children[0].chart, source)
+        self.assertIsInstance(parts[1].children[0].children, Mermaid)
+        self.assertEqual(parts[1].children[0].children.chart, source)
         self.assertEqual(parts[1].children[-1].children[0].children[1].children, source)
         self.assertEqual(parts[1].children[-1].children[1].children[1].content, source)
         self.assertEqual(parts[2].children, '\r\nNext steps.')
@@ -48,6 +48,18 @@ class TestTranscriptRenderer(unittest.TestCase):
         self.assertIn('flowchart', copies[0].content)
         self.assertIn('sequenceDiagram', copies[1].content)
 
+    def test_zoom_is_bounded_and_each_diagram_has_an_independent_control(self) -> None:
+        for value, expected in ((None, 1), (50, 0.5), (150, 1.5), (200, 2), (999, 2), (-10, 0.5)):
+            with self.subTest(value=value):
+                self.assertEqual(TranscriptRenderer.zoom_style(value), {'--mermaid-zoom': expected})
+        cards = [TranscriptRenderer._diagram('flowchart LR\nA --> B', name) for name in ('one', 'two')]
+        for card in cards:
+            viewport = card.children[0]
+            slider = card.children[1].children[1]
+            self.assertEqual(viewport.id['index'], slider.id['index'])
+            self.assertEqual(slider.value, 100)
+        self.assertNotEqual(cards[0].children[0].id, cards[1].children[0].id)
+
     def test_unsafe_configuration_and_oversized_diagrams_retain_source(self) -> None:
         for source in (
             '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA --> B\n',
@@ -57,7 +69,7 @@ class TestTranscriptRenderer(unittest.TestCase):
         ):
             with self.subTest(source=source[:40]):
                 card = TranscriptRenderer._diagram(source, '3-1')
-                self.assertFalse(any(isinstance(child, Mermaid) for child in card.children))
+                self.assertEqual(len(card.children), 2)
                 self.assertEqual(card.children[-1].children[1].children[1].content, source)
 
     def test_user_text_is_literal_and_render_results_retain_generation(self) -> None:
@@ -90,6 +102,7 @@ class TestTranscriptRenderer(unittest.TestCase):
         result = response.get_json()['response']['transcript-render-result']['data']
         self.assertEqual(result['sequence'], 7)
         component = result['children'][0]['props']['children'][1]['props']['children'][0]['props']['children'][0]
+        component = component['props']['children']
         self.assertEqual(component['namespace'], 'dash_extensions')
         self.assertEqual(component['props']['config']['securityLevel'], 'strict')
         page = client.get('/').text

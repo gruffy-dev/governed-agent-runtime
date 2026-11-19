@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from dash import Dash, Input, Output, dcc, html
+from dash import MATCH, Dash, Input, Output, dcc, html
 from dash.development.base_component import Component
 from dash_extensions import Mermaid
 
@@ -19,6 +19,10 @@ class TranscriptRenderer:
             Input('transcript-render-request', 'data'),
             prevent_initial_call=True,
         )(TranscriptRenderer.render)
+        application.callback(
+            Output({'type': 'mermaid-viewport', 'index': MATCH}, 'style'),
+            Input({'type': 'mermaid-zoom', 'index': MATCH}, 'value'),
+        )(TranscriptRenderer.zoom_style)
         application.clientside_callback(
             """
             function(result) {
@@ -30,6 +34,18 @@ class TranscriptRenderer:
             Input('transcript-render-result', 'data'),
             prevent_initial_call=True,
         )
+
+    @staticmethod
+    def zoom_style(value: float | None) -> dict[str, float]:
+        """
+        Scale a diagram relative to the available panel space.
+
+        :param value: Zoom percentage selected using the diagram control.
+
+        :return: CSS scale applied to this diagram's viewport.
+        """
+        percentage = value if isinstance(value, (int, float)) else 100
+        return {'--mermaid-zoom': max(50, min(200, percentage)) / 100}
 
     @staticmethod
     def render(request: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -134,7 +150,7 @@ class TranscriptRenderer:
         """
         visual = []
         if len(source) <= 50000 and not re.search(r'%%\{|(?m:^\s*(?:---\s*$|click\s))', source):
-            visual.append(Mermaid(
+            diagram = Mermaid(
                 chart=source,
                 name=f'mosaic-diagram-{identifier}',
                 className='mermaid-visual',
@@ -152,7 +168,22 @@ class TranscriptRenderer:
                         'lineColor': '#1e2a78',
                     },
                 },
-            ))
+            )
+            visual.extend([
+                html.Div(
+                    diagram, className='mermaid-viewport',
+                    id={'type': 'mermaid-viewport', 'index': identifier},
+                ),
+                html.Div([
+                    html.Span('Zoom'),
+                    dcc.Slider(
+                        id={'type': 'mermaid-zoom', 'index': identifier},
+                        min=50, max=200, step=10, value=100,
+                        marks={50: '50%', 100: 'Fit', 150: '150%', 200: '200%'},
+                        tooltip={'placement': 'bottom', 'always_visible': False},
+                    ),
+                ], className='mermaid-zoom-control'),
+            ])
         return html.Div(
             [
                 *visual,
