@@ -1,4 +1,7 @@
-#mosaic-root[data-signed-in="true"] .page-main { height:calc(100dvh - 118px); }
+#mosaic-root { display:flex; flex-direction:column; height:100dvh; }
+#mosaic-root > .workspace-header, #mosaic-root > .workspace-navigation { flex-shrink:0; }
+#mosaic-root .page-main { flex:1; min-height:0; height:auto; }
+.workspace-screen, .conversation-panel { min-height:0; }
 #mosaic-root[data-signed-in="false"] :is(.workspace-navigation, .workspace-screen, .skill-browser-screen),
 #mosaic-root[data-signed-in="true"] .login-screen,
 #mosaic-root[data-workspace-view="skills"] .workspace-screen,

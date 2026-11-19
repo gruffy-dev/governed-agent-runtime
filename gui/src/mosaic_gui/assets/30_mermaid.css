@@ -7,10 +7,16 @@
 }
 
 .mermaid-visual {
-    overflow: auto;
-    max-height: 720px;
+    max-width: 100%;
     padding: 8px 0 16px;
     text-align: center;
+}
+
+.mermaid-visual svg {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 380px;
 }
 
 .mermaid-card:has(.mermaid-visual svg) .mermaid-fallback {
@@ -23,30 +29,32 @@
 }
 
 .mermaid-tools {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
+    position: relative;
+    padding-top: 10px;
+    border-top: 1px solid #e1e6f3;
     color: #16205d;
     font-size: 13px;
 }
 
 .mermaid-tools details {
-    flex: 1;
     min-width: 0;
 }
 
 .mermaid-tools summary {
     cursor: pointer;
     font-weight: 600;
+    padding-right: 90px;
 }
 
-.mermaid-source {
+.message-body .mermaid-source {
     margin: 12px 0 0;
     padding: 12px;
-    max-height: 360px;
-    overflow: auto;
-    white-space: pre;
-    font-size: 13px;
+    width: 100%;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.55;
     color: #16205d;
     background: #fff;
     border: 1px solid #ccd4f0;
@@ -54,9 +62,14 @@
 }
 
 .mermaid-copy-control {
+    position: absolute;
+    top: 10px;
+    right: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    font-size: 12px;
+    color: #52607f;
     white-space: nowrap;
 }
 

@@ -167,7 +167,7 @@ class TranscriptRenderer:
                             html.Pre(source, className='mermaid-source'),
                         ]),
                         html.Div([
-                            html.Span('Copy source'),
+                            html.Span('Copy'),
                             dcc.Clipboard(
                                 id=f'mermaid-copy-{identifier}', content=source,
                                 title='Copy Mermaid source', className='mermaid-copy',
