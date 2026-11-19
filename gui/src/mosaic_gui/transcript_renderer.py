@@ -213,14 +213,14 @@ class TranscriptRenderer:
                 ),
                 html.Div([
                     html.Button(
-                        'Zoom out', id={'type': 'mermaid-zoom-out', 'index': identifier},
-                        n_clicks=0, className='btn btn-outline-primary btn-sm',
-                        title='Reduce the current chart scale',
+                        '−', id={'type': 'mermaid-zoom-out', 'index': identifier},
+                        n_clicks=0, className='btn btn-outline-primary btn-sm mermaid-zoom-step',
+                        title='Zoom out', **{'aria-label': 'Zoom out'},
                     ),
                     html.Button(
-                        'Zoom in', id={'type': 'mermaid-zoom-in', 'index': identifier},
-                        n_clicks=0, className='btn btn-outline-primary btn-sm',
-                        title='Enlarge the current chart scale',
+                        '+', id={'type': 'mermaid-zoom-in', 'index': identifier},
+                        n_clicks=0, className='btn btn-outline-primary btn-sm mermaid-zoom-step',
+                        title='Zoom in', **{'aria-label': 'Zoom in'},
                     ),
                     html.Button(
                         'Fit', id={'type': 'mermaid-zoom-fit', 'index': identifier},

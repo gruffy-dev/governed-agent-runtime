@@ -112,6 +112,11 @@ class TestTranscriptRenderer(unittest.TestCase):
         for card in cards:
             viewport = card.children[0]
             buttons = card.children[1].children
+            self.assertEqual([button.children for button in buttons], ['−', '+', 'Fit'])
+            self.assertEqual(buttons[0].to_plotly_json()['props']['aria-label'], 'Zoom out')
+            self.assertEqual(buttons[1].to_plotly_json()['props']['aria-label'], 'Zoom in')
+            self.assertEqual(buttons[0].title, 'Zoom out')
+            self.assertEqual(buttons[1].title, 'Zoom in')
             self.assertEqual({button.id['index'] for button in buttons}, {viewport.id['index']})
             self.assertEqual({button.id['type'] for button in buttons}, {
                 'mermaid-zoom-in', 'mermaid-zoom-out', 'mermaid-zoom-fit',

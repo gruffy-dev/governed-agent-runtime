@@ -187,8 +187,9 @@ blocks after the response finishes and when saved history is opened. Text keeps
 streaming through the existing browser transport. The original response and
 Mermaid syntax remain in the backend conversation history.
 
-Each diagram fits the available panel space and has native Dash **Zoom in**,
-**Zoom out** and **Fit** buttons. Each zoom step multiplies or divides the current
+Each diagram fits the available panel space and has native Dash **−** (Zoom out),
+**+** (Zoom in) and **Fit** buttons above the chart. Tooltips and accessibility
+labels describe the symbol buttons. Each zoom step multiplies or divides the current
 scale by 1.25, with no fixed zoom-in ceiling. **Fit** restores responsive sizing.
 Enlarged diagrams scroll within
 their own area, with scrollbars only when the chart exceeds the viewing area.

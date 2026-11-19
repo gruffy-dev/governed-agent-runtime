@@ -1,4 +1,6 @@
 .mermaid-card {
+    display: flex;
+    flex-direction: column;
     margin: 16px 0;
     padding: 16px;
     border: 1px solid #ccd4f0;
@@ -91,13 +93,22 @@
 }
 
 .mermaid-zoom-control {
+    order: -1;
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    margin: 8px 0 16px;
+    margin: 0 0 12px;
     color: #52607f;
     font-size: 12px;
+}
+
+.mermaid-zoom-step {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
 }
 
 .mermaid-card:not(:has(.mermaid-visual svg)) .mermaid-zoom-control {
