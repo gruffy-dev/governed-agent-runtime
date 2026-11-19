@@ -18,6 +18,7 @@ export class WorkspaceController {
     #conversation = null;
     #conversations = [];
     #messages = [];
+    #renderSequence = 0;
     #activityTimer = null;
     #activitySkills = null;
     #activityStage = null;
@@ -40,6 +41,11 @@ export class WorkspaceController {
         window.mosaicComposerAction = (id, prompt) => {
             if (id === "send-message") this.#submit(prompt);
             else if (id === "stop-stream") this.#streamController?.abort();
+        };
+        window.mosaicTranscript = result => {
+            if (!this.#signedIn || this.#streamController || result?.sequence !== this.#renderSequence) return;
+            this.#props("message-transcript", {children: result.children});
+            this.#scrollMessages();
         };
         document.addEventListener("keydown", event => this.#key(event));
         document.getElementById("sign-in-form").addEventListener("submit", event => {event.preventDefault(); this.#signIn();});
@@ -173,6 +179,9 @@ export class WorkspaceController {
         this.#props("saved-skill-view", {data: null});
         this.#props("mosaic-root", {"data-signed-in": "false", "data-workspace-view": "chat"});
         this.#conversations = this.#messages = [];
+        ++this.#renderSequence;
+        this.#props("transcript-render-request", {data: null});
+        this.#props("transcript-render-result", {data: null});
         this.#props("conversation-row-ids", {data: []});
         this.#props("conversation-sidebar-view", {data: null});
         this.#streamController = this.#operation = null;
@@ -397,10 +406,20 @@ export class WorkspaceController {
         /**
          * Render safe native Dash Markdown; keep ADK metadata and thought parts hidden.
          */
-        const scroller = document.getElementById("messages");
-        const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 100;
+        const sequence = ++this.#renderSequence;
         const children = this.#messages.map(message => this.#element("Div", {className: "message message-" + message.role, children: [this.#element("Div", {className: "message-label", children: message.role === "user" ? "You" : "MOSAIC"}), message.role === "user" ? this.#element("Div", {className: "message-body", children: message.text}) : message.text ? this.#element("Markdown", {className: "message-body", children: message.text, dangerously_allow_html: false, link_target: "_blank", mathjax: false, highlight_config: {theme: "light"}}, "dash_core_components") : this.#element("Div", {className: "message-body", children: ""})]}));
         this.#props("message-transcript", {children});
+        this.#scrollMessages();
+        if (!this.#streamController && this.#messages.some(message => message.role === "assistant" && /\bmermaid\b/i.test(message.text))) {
+            this.#props("transcript-render-request", {data: {sequence, messages: this.#messages.map(message => ({role: message.role, text: message.text}))}});
+        }
+    }
+    #scrollMessages() {
+        /**
+         * Preserve transcript scrolling and apply safe link attributes after Dash renders.
+         */
+        const scroller = document.getElementById("messages");
+        const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 100;
         requestAnimationFrame(() => {
             if (atBottom) scroller.scrollTop = scroller.scrollHeight;
             for (const link of scroller.querySelectorAll("a")) link.rel = "noopener noreferrer";

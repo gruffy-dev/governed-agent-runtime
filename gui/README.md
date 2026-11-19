@@ -150,8 +150,11 @@ Sign-in checks the cookie and always opens an unsaved blank chat. A conversation
 is created on the first non-empty message, not on login, refresh or clicking
 New conversation. Existing empty conversations are retained; no history is deleted.
 Dash builds the sidebar rows from conversation IDs. A browser callback fills
-in titles and dates from the API response. Titles and message text stay in the
-browser. Skills are grouped by the most-specific available
+in titles and dates from the API response. Titles stay in the browser.
+When a completed assistant response mentions Mermaid, its transcript text is sent
+to a stateless Python Dash callback for diagram presentation. The callback receives
+user and assistant text and a browser generation number. It keeps no server-side
+transcript state and does not use or forward authentication credentials. Skills are grouped by the most-specific available
 catalogue path and listed once. The Chat Skills panel starts collapsed. Open
 the **Skills** tab to browse by domain and function or search the published
 catalogue. Python Dash callbacks manage navigation, selections and save conflicts
@@ -170,6 +173,25 @@ and tooltips; desktop separators support pointer and arrow-key
 resizing. Markdown supports headings, lists, tables and highlighted code blocks.
 Raw HTML is disabled; the resource policy blocks external embedded images.
 Reasoning and raw tool/SDK metadata are not shown.
+
+### Mermaid diagrams
+
+MOSAIC answers can contain fenced `mermaid` blocks. The GUI renders complete
+blocks after the response finishes and when saved history is opened. Text keeps
+streaming through the existing browser transport. The original response and
+Mermaid syntax remain in the backend conversation history.
+
+Each diagram has a **Source** disclosure and a **Copy source** control. Copy
+returns the original diagram text between the fence lines, including whitespace.
+Invalid diagrams retain both controls and show a fallback message. The underlying
+component may also report a syntax error in the browser console. Per-diagram
+configuration directives and interactive `click` commands are displayed as source.
+Diagrams above the renderer's 50,000-character limit also retain source access.
+
+Python splits the response and constructs the diagram cards using the
+`dash-extensions` Mermaid component and native Dash controls. The library serves
+its renderer locally. The existing browser controller supplies completed text and
+rejects late render results after sign-out, conversation switches or newer messages.
 
 Request failures display a safe message and, when supplied by the backend, a
 UUID reference matching X-Correlation-ID. Include that reference when reporting

@@ -18,7 +18,7 @@ class TestWorkspaceController {
             addEventListener: (name, callback) => listeners.set(name, callback)};
         globalThis.window = {addEventListener() {}, confirm: () => true, dash_clientside: {set_props: (id, props) => Object.assign(element(id), props)}};
         globalThis.requestAnimationFrame = callback => callback();
-        const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: []};
+        const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: initialState.messages || []};
         const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], catalogue: [], version: 1, now: 0, ...initialState};
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
@@ -99,6 +99,55 @@ class TestWorkspaceController {
         for (let index = 0; index < 12; ++index) await new Promise(resolve => setImmediate(resolve));
     }
     static run() {
+        test("completed Mermaid responses render through Dash and stale results cannot restore old chat", async () => {
+            const source = "```mermaid\nflowchart LR\nA --> B\n```";
+            const fixture = this.setup({
+                messages: [{role: "assistant", text: source}],
+                conversations: [{conversation_id: "synthetic-chat", last_activity_at: "2026-01-01", title: "Diagram"}],
+            });
+            try {
+                await this.settle();
+                fixture.click("conversation-synthetic-chat");
+                await this.settle();
+                const request = fixture.element("transcript-render-request").data;
+                assert.deepEqual(request.messages, [{role: "assistant", text: source}]);
+                assert.deepEqual(Object.keys(request).sort(), ["messages", "sequence"]);
+                const diagram = [{type: "Div", props: {children: "Rendered diagram"}}];
+                window.mosaicTranscript({sequence: request.sequence, children: diagram});
+                assert.deepEqual(fixture.element("message-transcript").children, diagram);
+                fixture.click("new-conversation");
+                await this.settle();
+                window.mosaicTranscript({sequence: request.sequence, children: diagram});
+                assert.deepEqual(fixture.element("message-transcript").children, []);
+                fixture.click("sign-out");
+                await this.settle();
+                window.mosaicTranscript({sequence: request.sequence, children: diagram});
+                assert.equal(fixture.element("message-transcript").children, "");
+                assert.equal(fixture.element("transcript-render-request").data, null);
+                assert.equal(fixture.element("transcript-render-result").data, null);
+            } finally {fixture.restore();}
+        });
+        test("Mermaid rendering waits for stream completion and preserves source", async () => {
+            let stream;
+            const messages = [];
+            const fixture = this.setup({messages, manualStream: () => new ReadableStream({start(controller) {stream = controller;}})});
+            try {
+                await this.settle();
+                fixture.element("message-input").value = "Show a diagram";
+                fixture.click("send-message");
+                await this.settle();
+                const source = "```mermaid\nflowchart LR\nA --> B\n```";
+                const event = partial => new TextEncoder().encode("data: " + JSON.stringify({content: {role: "model", parts: [{text: source}]}, partial}) + "\n\n");
+                stream.enqueue(event(true));
+                await this.settle();
+                assert.equal(fixture.element("transcript-render-request").data, undefined);
+                messages.push({role: "user", text: "Show a diagram"}, {role: "assistant", text: source});
+                stream.enqueue(event(false));
+                stream.close();
+                await this.settle();
+                assert.equal(fixture.element("transcript-render-request").data.messages[1].text, source);
+            } finally {fixture.restore();}
+        });
         test("Marketplace sends browser API results back to Dash and preserves the chat draft", async () => {
             const fixture = this.setup();
             try {

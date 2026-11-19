@@ -13,6 +13,7 @@ from .gui_layout import GuiLayout
 from .gui_server import GuiServer
 from .skill_editor import register_skill_editor
 from .skill_views import register_skill_callbacks
+from .transcript_renderer import TranscriptRenderer
 
 
 class GuiApplication:
@@ -38,6 +39,7 @@ class GuiApplication:
         register_conversation_sidebar(application)
         register_sidebar_visibility(application)
         register_chat_composer(application)
+        TranscriptRenderer.register(application)
         application.index_string = """<!DOCTYPE html>
 <html><head>{%metas%}<title>{%title%}</title>
 <link rel="icon" type="image/svg+xml" href="/assets/tangram.svg">{%css%}</head>

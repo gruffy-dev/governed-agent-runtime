@@ -1,6 +1,5 @@
 import dash_bootstrap_components as dbc
-from dash import dcc
-from dash import html
+from dash import dcc, html
 
 from .gui_configuration import GuiConfiguration
 
@@ -451,6 +450,9 @@ class GuiLayout:
                 dcc.Store(id='conversation-sidebar-view', storage_type='memory'),
                 dcc.Store(id='conversation-action-result', storage_type='memory'),
                 dcc.Store(id='composer-action-result', storage_type='memory'),
+                dcc.Store(id='transcript-render-request', storage_type='memory'),
+                dcc.Store(id='transcript-render-result', storage_type='memory'),
+                dcc.Store(id='transcript-render-applied', storage_type='memory'),
                 dcc.Store(id='skill-editor-event', storage_type='memory'),
                 dcc.Store(id='skill-editor-state', storage_type='memory'),
                 dcc.Store(id='skill-workspace-busy', storage_type='memory'),
