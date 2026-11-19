@@ -1,4 +1,10 @@
+#messages {
+    container-type: size;
+}
+
 .mermaid-card {
+    /* Reserve space for the card frame and the zoom controls above the chart. */
+    --mermaid-view-height: max(0px, calc(100cqh - 80px));
     display: flex;
     flex-direction: column;
     margin: 16px 0;
@@ -11,8 +17,7 @@
 .mermaid-viewport {
     width: 100%;
     max-width: 100%;
-    min-height: 120px;
-    max-height: 75dvh;
+    max-height: var(--mermaid-view-height);
     overflow: auto;
     container-type: inline-size;
 }
@@ -27,7 +32,7 @@
     flex-shrink: 0;
     margin-inline: auto;
     width: auto;
-    height: 380px;
+    height: min(380px, max(0px, calc(var(--mermaid-view-height) - 24px)));
     max-width: 100cqw !important;
     max-height: 380px;
     zoom: var(--mermaid-zoom, 1);
