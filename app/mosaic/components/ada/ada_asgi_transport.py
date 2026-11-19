@@ -1,13 +1,14 @@
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Any, Literal
 
 from starlette.types import ASGIApp, Message
 
-from .ada_application_error import AdaApplicationError
 from ...models.ada.ada_application_adapter_configuration import AdaApplicationAdapterConfiguration
+from .ada_application_error import AdaApplicationError
 
 
 class AdaAsgiTransport:
@@ -35,7 +36,7 @@ class AdaAsgiTransport:
 
     async def request_json(
         self,
-        method: Literal['GET', 'POST'],
+        method: Literal['GET', 'POST', 'PATCH'],
         path: str,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any] | list[Any]:
@@ -80,7 +81,7 @@ class AdaAsgiTransport:
 
     async def stream_response(
         self,
-        method: Literal['GET', 'POST'],
+        method: Literal['GET', 'POST', 'PATCH'],
         path: str,
         payload: dict[str, Any] | None = None,
     ) -> AsyncIterator[Message]:
@@ -103,6 +104,16 @@ class AdaAsgiTransport:
             raise AdaApplicationError(
                 'Private route must be an absolute path without query parameters.'
             )
+        if method == 'PATCH' and (
+            re.fullmatch(
+                r'/apps/[A-Za-z0-9][A-Za-z0-9._-]*/users/[A-Za-z0-9][A-Za-z0-9._-]*/sessions/'
+                r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',
+                path,
+            ) is None
+            or payload is None
+            or set(payload) != {'state_delta'}
+        ):
+            raise AdaApplicationError('Private PATCH requires a session state update.')
         body = b'' if payload is None else json.dumps(payload).encode('utf-8')
         queue: asyncio.Queue[Message] = asyncio.Queue(
             maxsize=self._configuration.response_queue_capacity

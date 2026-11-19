@@ -26,6 +26,7 @@ from mosaic.models.identity.pilot_authentication_configuration import PilotAuthe
 from mosaic.models.identity.trusted_request_configuration import TrustedRequestConfiguration
 from mosaic.models.identity.trusted_request_context import TrustedRequestContext
 from mosaic.models.mosaic_database_configuration import MosaicDatabaseConfiguration
+from mosaic.models.orchestration.orchestration_state import OrchestrationState
 
 
 class TestConversationApi(unittest.TestCase):
@@ -130,6 +131,11 @@ class TestConversationApi(unittest.TestCase):
             self.private_headers.append(dict(request.headers))
             if reject:
                 raise HTTPException(status_code=500, detail='synthetic-private-detail')
+            if block and len(self.invocations) > 1:
+                payload = self.invocations[-1]
+                stored = self.records[(payload['app_name'], payload['user_id'], payload['session_id'])]
+                if stored['state']['mosaic:orchestration']['phase'] != 'completed':
+                    raise HTTPException(status_code=409, detail='Synthetic invocation is still active')
 
             async def events() -> AsyncIterator[bytes]:
                 record = {
@@ -139,10 +145,12 @@ class TestConversationApi(unittest.TestCase):
                     'partial': True,
                     'content': {'role': 'model', 'parts': [{'text': 'Hello'}]},
                 }
-                if block:
+                if block and len(self.invocations) == 1:
                     payload = self.invocations[-1]
                     stored = self.records[(payload['app_name'], payload['user_id'], payload['session_id'])]
-                    stored['state']['mosaic:orchestration'] = {'phase': 'planning'}
+                    stored['state']['mosaic:orchestration'] = OrchestrationState.start(
+                        'synthetic-invocation'
+                    ).model_dump(mode='json')
                     stored['events'].append({
                         'id': 'synthetic-prompt', 'author': 'user', 'timestamp': time.time(),
                         'content': payload['new_message'],
@@ -165,6 +173,117 @@ class TestConversationApi(unittest.TestCase):
                 self.private_stream_closed = True
 
             return StreamingResponse(events(), media_type='text/event-stream')
+
+    def test_job_completes_without_a_stream_and_replays_to_its_owner(self) -> None:
+        self._install_stream()
+        conversation_id = self._create()['conversation_id']
+        created = self.client.post(
+            f'/api/v1/conversations/{conversation_id}/jobs',
+            headers=self.headers, json={'text': 'Read synthetic status'},
+        )
+        self.assertEqual(created.status_code, 202)
+        path = f'/api/v1/conversations/jobs/{created.json()["job_id"]}'
+        job = self._wait_for_job(path, 'succeeded')
+        self.assertEqual(job['result_text'], 'Hello')
+        self.assertEqual(len(self.invocations), 1)
+        replay = self.client.get(path + '/events', headers=self.headers, params={'after': 1})
+        self.assertEqual(replay.status_code, 200)
+        self.assertTrue(replay.text.startswith('id: 2\n'))
+        self.assertNotIn('id: 1', replay.text)
+        foreign = {'Authorization': 'Bearer synthetic-token-b'}
+        self.assertEqual(self.client.get(path, headers=foreign).status_code, 404)
+        self.assertEqual(self.client.get(path + '/events', headers=foreign).status_code, 404)
+        self.assertEqual(self.client.post(path + '/stop', headers=foreign).status_code, 404)
+
+    def test_job_stop_waits_for_private_close_and_blocks_unsafe_follow_up(self) -> None:
+        self._check_job_stop_and_follow_up(patch_succeeds=False)
+
+    def test_job_stop_recovers_same_conversation_for_follow_up(self) -> None:
+        self._check_job_stop_and_follow_up(patch_succeeds=True)
+
+    def _check_job_stop_and_follow_up(self, *, patch_succeeds: bool) -> None:
+        self._install_stream(block=True)
+        patches = []
+
+        @self.private.patch('/apps/{app_name}/users/{user_id}/sessions/{session_id}')
+        async def patch_session(app_name: str, user_id: str, session_id: str, request: Request) -> dict[str, Any]:
+            self.assertTrue(self.private_stream_closed)
+            context = TrustedRequestContext(app_name=app_name, user_id=user_id)
+            with self.database.create_session() as session:
+                self.assertFalse(ConversationMetadataRepository(session).begin_invocation(context, UUID(session_id)))
+            payload = await request.json()
+            patches.append(payload)
+            if not patch_succeeds:
+                raise HTTPException(status_code=500, detail='Synthetic persistence failure')
+            record = self.records[(app_name, user_id, session_id)]
+            record['state'].update(payload['state_delta'])
+            return record
+
+        conversation_id = self._create()['conversation_id']
+        submit = f'/api/v1/conversations/{conversation_id}/jobs'
+        created = self.client.post(submit, headers=self.headers, json={'text': 'Read synthetic status'})
+        self.assertEqual(created.status_code, 202)
+        path = f'/api/v1/conversations/jobs/{created.json()["job_id"]}'
+        self._wait_for_job(path, 'running')
+        async def disconnect_from_replay() -> None:
+            first_frame = asyncio.Event()
+
+            async def receive() -> Message:
+                await first_frame.wait()
+                return {'type': 'http.disconnect'}
+
+            async def send(message: Message) -> None:
+                if message['type'] == 'http.response.start':
+                    self.assertEqual(message['status'], 200)
+                elif b'Hello' in message.get('body', b''):
+                    first_frame.set()
+
+            events_path = path + '/events'
+            scope = {
+                'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'},
+                'method': 'GET', 'path': events_path, 'raw_path': events_path.encode(),
+                'query_string': b'', 'headers': [(b'authorization', b'Bearer synthetic-token-a')],
+                'scheme': 'http', 'http_version': '1.1', 'server': ('testserver', 80), 'client': ('testclient', 1),
+            }
+            await asyncio.wait_for(self.application(scope, receive, send), 3)
+
+        asyncio.run(disconnect_from_replay())
+        self.assertFalse(self.private_stream_closed)
+        self.assertEqual(self.client.get(path, headers=self.headers).json()['status'], 'running')
+        self.assertTrue(self.invocations)
+        stopped = self.client.post(path + '/stop', headers=self.headers)
+        self.assertEqual(stopped.status_code, 200)
+        self.assertIn(stopped.json()['status'], ('stopping', 'cancelled'))
+        cancelled = self._wait_for_job(path, 'cancelled')
+        self.assertIsNone(cancelled['result_text'])
+        self.assertTrue(self.private_stream_closed)
+        self.assertEqual(len(patches), 1)
+        self.assertEqual(set(patches[0]), {'state_delta'})
+        self.assertEqual(set(patches[0]['state_delta']), {'mosaic:orchestration'})
+        completed = OrchestrationState.model_validate(patches[0]['state_delta']['mosaic:orchestration'])
+        self.assertEqual(completed.phase, 'completed')
+        self.assertEqual(completed.active_invocation_id, 'synthetic-invocation')
+        follow_up = self.client.post(submit, headers=self.headers, json={'text': 'Follow up'})
+        if patch_succeeds:
+            self.assertEqual(follow_up.status_code, 202)
+            second_job = self._wait_for_job(f'/api/v1/conversations/jobs/{follow_up.json()["job_id"]}', 'succeeded')
+            self.assertEqual(second_job['result_text'], 'Hello')
+            self.assertEqual(self.invocations[-1]['session_id'], conversation_id)
+            self.assertEqual(len(patches), 1)
+        else:
+            self.assertEqual(follow_up.status_code, 409)
+
+    def _wait_for_job(self, path: str, status: str) -> dict[str, Any]:
+        deadline = time.monotonic() + 3
+        while True:
+            response = self.client.get(path, headers=self.headers)
+            self.assertEqual(response.status_code, 200)
+            job = response.json()
+            if job['status'] == status:
+                return job
+            if time.monotonic() >= deadline:
+                self.fail(f'Job did not reach {status}: {job}')
+            time.sleep(0.01)
 
     def test_stream_uses_trusted_identity_and_preserves_native_adk_text(self) -> None:
         self._install_stream()
@@ -640,7 +759,10 @@ class TestConversationApi(unittest.TestCase):
             if operation['x-mosaic-implementation'] == 'available'
         }
         self.assertEqual(
-            available, {'createConversation', 'listConversations', 'getConversation', 'submitMessage'}
+            available, {
+                'createConversation', 'listConversations', 'getConversation', 'submitMessage',
+                'submitConversationJob', 'getConversationJob', 'streamConversationJob', 'stopConversationJob',
+            }
         )
 
     def test_inconsistent_private_ownership_fails_closed_with_safe_correlated_log(

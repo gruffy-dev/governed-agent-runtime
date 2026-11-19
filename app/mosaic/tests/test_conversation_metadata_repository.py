@@ -10,6 +10,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from mosaic import migrations
+from mosaic.components.persistence.conversation_job_repository import ConversationJobRepository
 from mosaic.components.persistence.conversation_metadata_repository import ConversationMetadataRepository
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
@@ -39,6 +40,68 @@ class TestConversationMetadataRepository(unittest.TestCase):
             repository = UserAccessRepository(session)
             repository.add_user(self.context.user_id, datetime.now(UTC))
             repository.add_user('another-synthetic-user', datetime.now(UTC))
+
+    def test_job_reservation_is_transactional_and_owner_scoped(self) -> None:
+        with self.database.create_session() as session, session.begin():
+            ConversationMetadataRepository(session).add(
+                self.context, self.conversation_id, self.created_at
+            )
+
+        with self.database.create_session() as session:
+            abandoned_id = ConversationJobRepository(session).reserve(
+                self.context, self.conversation_id, 'Check a synthetic target.'
+            )
+            self.assertIsNotNone(abandoned_id)
+            session.rollback()
+
+        foreign = TrustedRequestContext(
+            app_name=self.context.app_name, user_id='another-synthetic-user'
+        )
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationJobRepository(session)
+            self.assertIsNone(repository.get(self.context, abandoned_id))
+            self.assertIsNone(repository.reserve(foreign, self.conversation_id, 'Foreign request.'))
+            job_id = repository.reserve(self.context, self.conversation_id, 'Check a synthetic target.')
+            self.assertIsNotNone(job_id)
+
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationJobRepository(session)
+            job = repository.get(self.context, job_id)
+            self.assertEqual(job.status, 'queued')
+            self.assertEqual(job.request_text, 'Check a synthetic target.')
+            self.assertIsNone(repository.get(foreign, job_id))
+            self.assertIsNone(repository.reserve(self.context, self.conversation_id, 'Duplicate attempt.'))
+
+    def test_running_job_reserves_conversation_until_stop_is_confirmed(self) -> None:
+        with self.database.create_session() as session, session.begin():
+            ConversationMetadataRepository(session).add(
+                self.context, self.conversation_id, self.created_at
+            )
+            repository = ConversationJobRepository(session)
+            job_id = repository.reserve(self.context, self.conversation_id, 'Read a synthetic status.')
+
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationJobRepository(session)
+            self.assertTrue(repository.claim(self.context, job_id))
+
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationJobRepository(session)
+            self.assertFalse(repository.claim(self.context, job_id))
+            self.assertTrue(repository.request_stop(self.context, job_id))
+            self.assertEqual(repository.get(self.context, job_id).status, 'stopping')
+            self.assertIsNone(repository.reserve(self.context, self.conversation_id, 'Too early.'))
+            self.assertFalse(repository.finish(
+                self.context, job_id, 'succeeded', can_continue=True, result_text='Late answer.',
+            ))
+
+        with self.database.create_session() as session, session.begin():
+            repository = ConversationJobRepository(session)
+            self.assertTrue(repository.finish(self.context, job_id, 'cancelled', can_continue=True))
+            self.assertEqual(repository.get(self.context, job_id).status, 'cancelled')
+            self.assertIsNone(repository.get(self.context, job_id).result_text)
+            self.assertIsNotNone(repository.reserve(self.context, self.conversation_id, 'Follow-up.'))
+            self.assertFalse(repository.finish(self.context, job_id, 'cancelled', can_continue=True))
+            self.assertIsNone(repository.reserve(self.context, self.conversation_id, 'Still busy.'))
 
     def test_schema_contains_metadata_only_and_owner_index(self) -> None:
         inspector = inspect(self.database.engine)

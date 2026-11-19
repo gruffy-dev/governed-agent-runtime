@@ -2,9 +2,11 @@ import re
 from typing import Any
 from uuid import UUID, uuid4
 
+from ...models.identity.trusted_request_context import TrustedRequestContext
+from ...models.orchestration.orchestration_state import OrchestrationState
+from ..orchestration.orchestration_transition_controller import OrchestrationTransitionController
 from .ada_application_error import AdaApplicationError
 from .ada_asgi_transport import AdaAsgiTransport
-from ...models.identity.trusted_request_context import TrustedRequestContext
 
 
 class AdaSessionApi:
@@ -73,6 +75,40 @@ class AdaSessionApi:
             'GET', f'{self._path(context)}/{conversation_id}',
         )
         return self._validate_session(response, context, conversation_id)
+
+    async def complete_stopped_goal(
+        self, context: TrustedRequestContext, conversation_id: UUID,
+    ) -> None:
+        """
+        Close the saved goal after Stop while the worker still holds its reservation.
+
+        :param context: Trusted conversation owner.
+        :param conversation_id: Session whose private invocation has fully closed.
+
+        :raises AdaApplicationError: If the saved state cannot be confirmed.
+        :raises ValidationError: If the saved orchestration record is invalid.
+        """
+        state_key = OrchestrationTransitionController().state_key
+        session = await self.get(context, conversation_id)
+        saved_state = session['state']
+        if not isinstance(saved_state, dict):
+            raise AdaApplicationError('Private session returned invalid state.')
+        if state_key not in saved_state:
+            return
+        current = OrchestrationState.model_validate(saved_state[state_key])
+        if current.phase == 'completed':
+            return
+
+        completed = current.model_copy(update={'phase': 'completed', 'clarification_question': None})
+        replacement = completed.model_dump(mode='json')
+        response = await self._transport.request_json(
+            'PATCH', f'{self._path(context)}/{conversation_id}',
+            {'state_delta': {state_key: replacement}},
+        )
+        self._validate_session(response, context, conversation_id)
+        reread = await self.get(context, conversation_id)
+        if reread['state'].get(state_key) != replacement:
+            raise AdaApplicationError('Stopped goal state was not persisted.')
 
     @staticmethod
     def _path(context: TrustedRequestContext) -> str:

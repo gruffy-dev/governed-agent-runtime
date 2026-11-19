@@ -96,6 +96,14 @@ class AdaStreamingResponse(StreamingResponse):
                 await self._body_stream.aclose()
                 await self._close()
 
+    def public_events(self) -> AsyncGenerator[bytes, None]:
+        """
+        Expose the same redacted frames to a background consumer.
+
+        :return: Iterator owned and closed by the background worker.
+        """
+        return self._body_stream
+
     async def _close(self) -> None:
         """
         Finalise availability once after private cleanup and before clean public EOF.

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from ...models.api.api_error_response import ApiErrorResponse
 from ...models.api.conversation_detail import ConversationDetail
+from ...models.api.conversation_job_detail import ConversationJobDetail
 from ...models.api.conversation_list_response import ConversationListResponse
 from ...models.api.create_conversation_request import CreateConversationRequest
 from ...models.api.submit_message_request import SubmitMessageRequest
@@ -39,6 +40,7 @@ class ConversationApiContract:
             CreateConversationRequest,
             SubmitMessageRequest,
             ConversationDetail,
+            ConversationJobDetail,
             ConversationListResponse,
             ApiErrorResponse,
             AuthenticationErrorResponse,
@@ -85,6 +87,43 @@ class ConversationApiContract:
                 ),
             },
         }
+        paths['/api/v1/conversations/{conversation_id}/jobs'] = {
+            'post': self._operation(
+                'submitConversationJob', 'Queue an owned goal and return a job ID.',
+                ConversationJobDetail, success_status=202, request_model=SubmitMessageRequest,
+                owned_conversation=True,
+            ),
+        }
+        paths['/api/v1/conversations/{conversation_id}/jobs']['post']['responses']['409'] = self._response(
+            ApiErrorResponse, 'The conversation is busy or interrupted.',
+        )
+        for suffix, method, name, description in (
+            ('', 'get', 'getConversationJob', 'Return owned job status and its saved result.'),
+            ('/events', 'get', 'streamConversationJob', 'Replay and follow owned job events. Disconnecting leaves the job running.'),
+            ('/stop', 'post', 'stopConversationJob', 'Request cancellation and return the current status.'),
+        ):
+            streaming = suffix == '/events'
+            operation = self._operation(
+                name, description, ConversationJobDetail, owned_conversation=True, streaming=streaming,
+            )
+            operation['parameters'][0]['name'] = 'job_id'
+            operation['responses']['404'] = self._response(ApiErrorResponse, 'Job unavailable.')
+            if streaming:
+                operation['parameters'].append({
+                    'name': 'after', 'in': 'query',
+                    'description': 'Replay events after this sequence number.',
+                    'schema': {'type': 'integer', 'minimum': 0, 'default': 0},
+                })
+                operation['responses'].pop('409')
+                operation['x-mosaic-sse'].update({
+                    'framing': 'id: <sequence>\ndata: <ADK JSON record>\n\n',
+                    'disconnect': 'Detach the subscriber; the job keeps running.',
+                    'reconnection': 'Poll status or reconnect with the last received sequence.',
+                    'errors': 'Check the job status for the completed outcome.',
+                    'availability': 'Check the job status and conversation availability.',
+                    'concurrency': 'Subscribers follow the same persisted job.',
+                })
+            paths[f'/api/v1/conversations/jobs/{{job_id}}{suffix}'] = {method: operation}
         return {
             'openapi': '3.1.0',
             'info': {

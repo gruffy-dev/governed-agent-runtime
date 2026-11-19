@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from .components.ada.ada_application_lifecycle import AdaApplicationLifecycle
 from .components.ada.ada_asgi_transport import AdaAsgiTransport
+from .components.api.conversation_job_service import ConversationJobService
 from .components.persistence.mosaic_database import MosaicDatabase
 from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from .models.backend_configuration import BackendConfiguration
@@ -115,6 +116,7 @@ class Backend:
             try:
                 identity_boundary.validate_routes(public_application)
                 async with lifecycle.running():
+                    public_application.state.conversation_jobs = ConversationJobService(runtime_database)
                     public_application.state.ada_transport = AdaAsgiTransport(
                         private_application,
                         ada_adapter_configuration,
@@ -123,6 +125,7 @@ class Backend:
                     try:
                         yield
                     finally:
+                        await public_application.state.conversation_jobs.close()
                         del public_application.state.ada_transport
             finally:
                 runtime_database.dispose()
@@ -185,7 +188,10 @@ class Backend:
             ConversationApiDocumentation(
                 ConversationApiContract(
                     pilot_authentication_configuration,
-                    implemented_operations=('createConversation', 'listConversations', 'getConversation', 'submitMessage'),
+                    implemented_operations=(
+                        'createConversation', 'listConversations', 'getConversation', 'submitMessage',
+                        'submitConversationJob', 'getConversationJob', 'streamConversationJob', 'stopConversationJob',
+                    ),
                 ),
                 context_dependency,
             ).register_routes(application)

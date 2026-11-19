@@ -2,7 +2,8 @@ from functools import partial
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi.responses import StreamingResponse
 import anyio
 
 from .ada_streaming_response import AdaStreamingResponse
@@ -16,6 +17,7 @@ from ..ada.ada_application_error import AdaApplicationError
 from ..identity.trusted_request_context_dependency import TrustedRequestContextDependency
 from ..persistence.mosaic_database import MosaicDatabase
 from ...models.api.conversation_detail import ConversationDetail
+from ...models.api.conversation_job_detail import ConversationJobDetail
 from ...models.api.conversation_list_response import ConversationListResponse
 from ...models.api.conversation_projection_configuration import ConversationProjectionConfiguration
 from ...models.api.create_conversation_request import CreateConversationRequest
@@ -160,6 +162,58 @@ class ConversationApi:
                 raise
             response.headers['X-Correlation-ID'] = str(self._audit.completed(context, 'submit', 200))
             return response
+
+        @router.post('/{conversation_id}/jobs', status_code=202)
+        async def submit_job(
+            conversation_id: UUID, body: SubmitMessageRequest, request: Request, response: Response,
+            context: Annotated[TrustedRequestContext, Depends(self._context_dependency)],
+        ) -> ConversationJobDetail:
+            """
+            Reserve the conversation and return the job before execution completes.
+            """
+            response.headers['Cache-Control'] = 'no-store'
+            return await request.app.state.conversation_jobs.submit(
+                context, conversation_id, body, request.app.state.ada_transport,
+                self._adapter_configuration.maximum_response_bytes, self._public_agent_name,
+            )
+
+        @router.get('/jobs/{job_id}')
+        async def get_job(
+            job_id: UUID, request: Request, response: Response,
+            context: Annotated[TrustedRequestContext, Depends(self._context_dependency)],
+        ) -> ConversationJobDetail:
+            """
+            Return the owned job status and any saved result.
+            """
+            response.headers['Cache-Control'] = 'no-store'
+            return await request.app.state.conversation_jobs.get(context, job_id)
+
+        @router.get('/jobs/{job_id}/events')
+        async def job_events(
+            job_id: UUID, request: Request,
+            context: Annotated[TrustedRequestContext, Depends(self._context_dependency)],
+            after: Annotated[int, Query(ge=0)] = 0,
+        ) -> StreamingResponse:
+            """
+            Replay and stream public events by sequence number.
+            """
+            jobs = request.app.state.conversation_jobs
+            await jobs.get(context, job_id)
+            return StreamingResponse(
+                jobs.events(context, job_id, after), media_type='text/event-stream',
+                headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'},
+            )
+
+        @router.post('/jobs/{job_id}/stop')
+        async def stop_job(
+            job_id: UUID, request: Request, response: Response,
+            context: Annotated[TrustedRequestContext, Depends(self._context_dependency)],
+        ) -> ConversationJobDetail:
+            """
+            Request explicit cancellation of an owned job.
+            """
+            response.headers['Cache-Control'] = 'no-store'
+            return await request.app.state.conversation_jobs.stop(context, job_id)
 
         router.add_api_route(
             '',
