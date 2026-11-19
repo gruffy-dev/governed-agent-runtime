@@ -8,25 +8,27 @@
 
 .mermaid-viewport {
     width: 100%;
-    min-width: min(240px, 100%);
     max-width: 100%;
     min-height: 120px;
     max-height: 75dvh;
     overflow: auto;
-    resize: both;
+    container-type: inline-size;
 }
 
 .mermaid-visual {
-    width: calc(100% * var(--mermaid-zoom, 1));
+    display: flex;
+    width: 100%;
     padding: 8px 0 16px;
-    text-align: center;
 }
 
 .mermaid-visual svg {
-    width: 100%;
-    height: auto;
-    max-width: 100% !important;
-    max-height: calc(380px * var(--mermaid-zoom, 1));
+    flex-shrink: 0;
+    margin-inline: auto;
+    width: auto;
+    height: 380px;
+    max-width: 100cqw !important;
+    max-height: 380px;
+    zoom: var(--mermaid-zoom, 1);
 }
 
 .mermaid-card:has(.mermaid-visual svg) .mermaid-fallback {

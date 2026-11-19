@@ -183,8 +183,8 @@ Mermaid syntax remain in the backend conversation history.
 
 Each diagram fits the available panel space and has a native Dash zoom slider
 (50–200%; **Fit** restores responsive sizing). Enlarged diagrams scroll within
-their own area. Drag the bottom-right corner of the chart area to resize it
-independently within the chat panel. Each diagram has a **Source** disclosure and a **Copy** control. Copy
+their own area, with scrollbars only when the chart exceeds the viewing area.
+Each diagram has a **Source** disclosure and a **Copy** control. Copy
 returns the original diagram text between the fence lines, including whitespace.
 Invalid diagrams retain both controls and show a fallback message. The underlying
 component may also report a syntax error in the browser console. Per-diagram
