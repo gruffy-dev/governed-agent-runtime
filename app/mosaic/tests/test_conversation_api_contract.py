@@ -13,10 +13,17 @@ class TestConversationApiContract(unittest.TestCase):
         OpenAPI.model_validate(contract)
         self.assertEqual(contract['openapi'], '3.1.0')
         self.assertEqual(contract['info']['version'], '1.0.0')
-        self.assertEqual(len(contract['paths']), 3)
-        self.assertEqual(sum(len(path) for path in contract['paths'].values()), 4)
-        self.assertTrue(
-            all(path.startswith('/api/v1/conversations') for path in contract['paths'])
+        self.assertEqual(
+            {path: set(operations) for path, operations in contract['paths'].items()},
+            {
+                '/api/v1/conversations': {'get', 'post'},
+                '/api/v1/conversations/{conversation_id}': {'get'},
+                '/api/v1/conversations/{conversation_id}/messages': {'post'},
+                '/api/v1/conversations/{conversation_id}/jobs': {'post'},
+                '/api/v1/conversations/jobs/{job_id}': {'get'},
+                '/api/v1/conversations/jobs/{job_id}/events': {'get'},
+                '/api/v1/conversations/jobs/{job_id}/stop': {'post'},
+            },
         )
         self.assertNotIn('RunAgentRequest', contract['components']['schemas'])
         self._check_references(contract, contract)
@@ -42,7 +49,7 @@ class TestConversationApiContract(unittest.TestCase):
                     self.assertNotIn(
                         'WWW-Authenticate', operation['responses']['403']['headers']
                     )
-                    if '{conversation_id}' in path:
+                    if '{conversation_id}' in path or '{job_id}' in path:
                         self.assertIn('404', operation['responses'])
                         self.assertEqual(
                             operation['parameters'][0]['schema']['format'], 'uuid'
