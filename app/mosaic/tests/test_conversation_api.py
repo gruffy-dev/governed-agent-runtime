@@ -216,7 +216,8 @@ class TestConversationApi(unittest.TestCase):
             if not patch_succeeds:
                 raise HTTPException(status_code=500, detail='Synthetic persistence failure')
             record = self.records[(app_name, user_id, session_id)]
-            record['state'].update(payload['state_delta'])
+            state = OrchestrationState.model_validate(payload['state_delta']['mosaic:orchestration'])
+            record['state']['mosaic:orchestration'] = state.model_dump(mode='json', exclude_none=True)
             return record
 
         conversation_id = self._create()['conversation_id']

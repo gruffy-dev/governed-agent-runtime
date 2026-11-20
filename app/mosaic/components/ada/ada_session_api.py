@@ -107,7 +107,8 @@ class AdaSessionApi:
         )
         self._validate_session(response, context, conversation_id)
         reread = await self.get(context, conversation_id)
-        if reread['state'].get(state_key) != replacement:
+        persisted = OrchestrationState.model_validate(reread['state'].get(state_key))
+        if persisted != completed:
             raise AdaApplicationError('Stopped goal state was not persisted.')
 
     @staticmethod
