@@ -1,4 +1,5 @@
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -41,9 +42,9 @@ class TestBrowserOriginMiddleware(unittest.TestCase):
             'synthetic-browser-user'
         )
         self.token = user.plaintext_token.get_secret_value()
-        self.client = TestClient(application)
-        self.client.__enter__()
-        self.addCleanup(self.client.__exit__, None, None, None)
+        self.client_stack = ExitStack()
+        self.addCleanup(self.client_stack.close)
+        self.client = self.client_stack.enter_context(TestClient(application))
 
     def test_preflight_requires_no_credential_but_only_approved_method_and_headers(
         self,
@@ -57,6 +58,11 @@ class TestBrowserOriginMiddleware(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['access-control-allow-origin'], self.origin)
         self.assertEqual(response.headers['access-control-allow-credentials'], 'true')
+        job_preflight = self.client.options(
+            '/api/v1/conversations/synthetic-conversation/jobs',
+            headers={**headers, 'Access-Control-Request-Headers': 'content-type,idempotency-key'},
+        )
+        self.assertEqual(job_preflight.status_code, 200)
         for replacement in (
             {'Origin': 'https://untrusted.example.com'},
             {'Access-Control-Request-Method': 'DELETE'},
@@ -157,6 +163,7 @@ class TestBrowserOriginMiddleware(unittest.TestCase):
             ).status_code,
             200,
         )
+        self.client_stack.close()
         application = Backend.create_application(
             ada_app_factory=FastAPI,
             database_configuration=self.configuration,

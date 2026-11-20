@@ -115,18 +115,22 @@ class Backend:
             """
             try:
                 identity_boundary.validate_routes(public_application)
-                async with lifecycle.running():
-                    public_application.state.conversation_jobs = ConversationJobService(runtime_database)
-                    public_application.state.ada_transport = AdaAsgiTransport(
-                        private_application,
-                        ada_adapter_configuration,
-                        lifespan_state=lifecycle.state,
-                    )
-                    try:
-                        yield
-                    finally:
-                        await public_application.state.conversation_jobs.close()
-                        del public_application.state.ada_transport
+                with runtime_database.exclusive_job_runtime():
+                    async with lifecycle.running():
+                        jobs = ConversationJobService(runtime_database)
+                        transport = AdaAsgiTransport(
+                            private_application,
+                            ada_adapter_configuration,
+                            lifespan_state=lifecycle.state,
+                        )
+                        await jobs.recover_abandoned(transport)
+                        public_application.state.conversation_jobs = jobs
+                        public_application.state.ada_transport = transport
+                        try:
+                            yield
+                        finally:
+                            await jobs.close()
+                            del public_application.state.ada_transport
             finally:
                 runtime_database.dispose()
 
@@ -168,7 +172,7 @@ class Backend:
                 allow_origins=browser_access_configuration.allowed_origins,
                 allow_credentials=True,
                 allow_methods=['GET', 'POST'],
-                allow_headers=['Content-Type', 'Authorization'],
+                allow_headers=['Content-Type', 'Authorization', 'Idempotency-Key'],
                 expose_headers=['X-Correlation-ID'],
             )
             PilotAuthenticationApi(

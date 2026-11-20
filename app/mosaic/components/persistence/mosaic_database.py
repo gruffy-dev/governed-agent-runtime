@@ -1,6 +1,8 @@
 """SQLAlchemy engine and session ownership for the MOSAIC database."""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import URL, Engine, create_engine, event
@@ -57,6 +59,26 @@ class MosaicDatabase:
             New SQLAlchemy session bound to the MOSAIC engine.
         """
         return self._session_factory()
+
+    @contextmanager
+    def exclusive_job_runtime(self) -> Iterator[None]:
+        """
+        Hold a process lock for the SQLite pilot runtime and its restart cleanup.
+
+        :return: Context that retains ownership until private execution shuts down.
+
+        :raises RuntimeError: If another backend already owns this database.
+        """
+        from fcntl import LOCK_EX, LOCK_NB, flock
+
+        path = self._configuration.resolved_database_path
+        lock_path = path.with_name(f'{path.name}.jobs.lock')
+        with lock_path.open('a', encoding='utf-8') as lock:
+            try:
+                flock(lock.fileno(), LOCK_EX | LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('Another backend already owns this SQLite job database.') from None
+            yield
 
     def dispose(self) -> None:
         """Release pooled SQLite connections owned by the engine."""

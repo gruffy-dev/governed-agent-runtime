@@ -2,7 +2,7 @@ from functools import partial
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 import anyio
 
@@ -167,6 +167,7 @@ class ConversationApi:
         async def submit_job(
             conversation_id: UUID, body: SubmitMessageRequest, request: Request, response: Response,
             context: Annotated[TrustedRequestContext, Depends(self._context_dependency)],
+            submission_key: Annotated[UUID | None, Header(alias='Idempotency-Key')] = None,
         ) -> ConversationJobDetail:
             """
             Reserve the conversation and return the job before execution completes.
@@ -175,6 +176,7 @@ class ConversationApi:
             return await request.app.state.conversation_jobs.submit(
                 context, conversation_id, body, request.app.state.ada_transport,
                 self._adapter_configuration.maximum_response_bytes, self._public_agent_name,
+                submission_key,
             )
 
         @router.get('/jobs/{job_id}')

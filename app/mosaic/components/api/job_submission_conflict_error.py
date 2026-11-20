@@ -1,0 +1,2 @@
+class JobSubmissionConflictError(RuntimeError):
+    pass

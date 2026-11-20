@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .conversation_not_found_error import ConversationNotFoundError
 from .conversation_unavailable_error import ConversationUnavailableError
+from .job_submission_conflict_error import JobSubmissionConflictError
 from ..ada.ada_application_error import AdaApplicationError
 from ...models.api.api_error_response import ApiErrorResponse
 
@@ -30,6 +31,7 @@ class ConversationApiFailureHandler:
         for error in (
             ConversationNotFoundError,
             ConversationUnavailableError,
+            JobSubmissionConflictError,
             AdaApplicationError,
             SQLAlchemyError,
             Exception,
@@ -50,6 +52,8 @@ class ConversationApiFailureHandler:
         """
         if isinstance(error, ConversationUnavailableError):
             return self._response(409, is_interrupted=error.is_interrupted)
+        if isinstance(error, JobSubmissionConflictError):
+            return self._response(409, submission_conflict=True)
         return self._response(
             404 if isinstance(error, ConversationNotFoundError) else 500
         )
@@ -73,12 +77,15 @@ class ConversationApiFailureHandler:
             return self._response(400)
         return await request_validation_exception_handler(request, error)
 
-    def _response(self, status_code: int, *, is_interrupted: bool = False) -> JSONResponse:
+    def _response(
+        self, status_code: int, *, is_interrupted: bool = False, submission_conflict: bool = False,
+    ) -> JSONResponse:
         """
         Log allowlisted failure metadata and produce the matching public envelope.
 
         :param status_code: Internal selected validation, missing or failure status.
         :param is_interrupted: Whether a 409 requires a fresh conversation, not waiting.
+        :param submission_conflict: Whether a key was reused with different text.
 
         :return: Response with matching body, log and header correlation ID.
         """
@@ -105,6 +112,10 @@ class ConversationApiFailureHandler:
                 else 'A previous response has not been finalised. Wait or start a new conversation.',
             ),
         }[status_code]
+        if submission_conflict:
+            detail = 'Submission key already used'
+            code = 'idempotency_conflict'
+            action = 'Reuse the original message or submit the new message with a new key.'
         envelope = ApiErrorResponse(
             detail=detail, error_code=code, action=action, correlation_id=uuid4()
         )

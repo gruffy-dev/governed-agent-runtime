@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
 
 from ...models.api.conversation_job_summary import ConversationJobSummary
@@ -23,6 +23,7 @@ class ConversationJobRepository:
 
     def reserve(
         self, context: TrustedRequestContext, conversation_id: UUID, request_text: str,
+        submission_key: UUID | None = None,
     ) -> UUID | None:
         """
         Reserve a conversation and queue a job in the same transaction.
@@ -30,6 +31,7 @@ class ConversationJobRepository:
         :param context: Trusted conversation owner.
         :param conversation_id: Conversation receiving the job.
         :param request_text: Validated user message to execute.
+        :param submission_key: Client key scoped to the owned conversation.
 
         :return: New job ID, or None if the conversation could not be reserved.
         """
@@ -42,7 +44,8 @@ class ConversationJobRepository:
         now = datetime.now(UTC)
         self._session.add(ConversationJobRecord(
             job_id=str(job_id), conversation_id=str(conversation_id),
-            request_text=request_text, status='queued',
+            request_text=request_text, submission_key=str(submission_key) if submission_key else None,
+            status='queued',
             created_at=now, updated_at=now,
         ))
         return job_id
@@ -57,17 +60,80 @@ class ConversationJobRepository:
         :return: Owned job record, or None if absent or owned by someone else.
         """
         return self._session.scalars(
+            self._owned_jobs(context).where(ConversationJobRecord.job_id == str(job_id))
+        ).one_or_none()
+
+    def get_by_submission_key(
+        self, context: TrustedRequestContext, conversation_id: UUID, submission_key: UUID,
+    ) -> ConversationJobRecord | None:
+        """
+        Resolve an earlier request under the same conversation and owner.
+
+        :param context: Trusted application and user identity.
+        :param conversation_id: Owned conversation scope.
+        :param submission_key: Key from the original submission.
+
+        :return: Matching job, if present.
+        """
+        return self._session.scalars(
+            self._owned_jobs(context).where(
+                ConversationJobRecord.conversation_id == str(conversation_id),
+                ConversationJobRecord.submission_key == str(submission_key),
+            )
+        ).one_or_none()
+
+    def _owned_jobs(self, context: TrustedRequestContext) -> Select[tuple[ConversationJobRecord]]:
+        """
+        Scope a job query to the authenticated owner.
+
+        :param context: Trusted application and user identity.
+
+        :return: Select statement for owned job records.
+        """
+        return (
             select(ConversationJobRecord)
             .join(
                 ConversationMetadataRecord,
                 ConversationJobRecord.conversation_id == ConversationMetadataRecord.conversation_id,
             )
             .where(
-                ConversationJobRecord.job_id == str(job_id),
                 ConversationMetadataRecord.app_name == context.app_name,
                 ConversationMetadataRecord.user_id == context.user_id,
             )
-        ).one_or_none()
+        )
+
+    def abandoned_jobs(self) -> list[tuple[TrustedRequestContext, UUID, UUID, str]]:
+        """
+        Find unfinished jobs after acquiring exclusive pilot runtime ownership.
+
+        :return: Owner, job ID, conversation ID and current status for recovery.
+        """
+        rows = self._session.execute(
+            select(
+                ConversationMetadataRecord.app_name, ConversationMetadataRecord.user_id,
+                ConversationJobRecord.job_id, ConversationJobRecord.conversation_id, ConversationJobRecord.status,
+            )
+            .join(ConversationMetadataRecord, ConversationJobRecord.conversation_id == ConversationMetadataRecord.conversation_id)
+            .where(ConversationJobRecord.status.in_(('queued', 'running', 'stopping')))
+        )
+        return [
+            (TrustedRequestContext(app_name=row.app_name, user_id=row.user_id), UUID(row.job_id), UUID(row.conversation_id), row.status)
+            for row in rows
+        ]
+
+    def fail_abandoned(self, context: TrustedRequestContext, job_id: UUID, *, can_continue: bool) -> None:
+        """
+        Record an abandoned job as failed and clear its conversation reservation.
+
+        :param context: Stored owner of the abandoned job.
+        :param job_id: Job left behind by the former runtime.
+        :param can_continue: Whether the private session is ready for a follow-up.
+        """
+        conversation_id = self._transition(context, job_id, ('queued', 'running', 'stopping'), 'failed')
+        if conversation_id is not None:
+            ConversationMetadataRepository(self._session).finish_invocation(
+                context, conversation_id, is_interrupted=not can_continue,
+            )
 
     def get_conversation_status(
         self, context: TrustedRequestContext, conversation_id: UUID,

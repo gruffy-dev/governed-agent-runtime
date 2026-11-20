@@ -3,6 +3,7 @@ import json
 import time
 import unittest
 from collections.abc import AsyncIterator
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,6 +21,7 @@ from mosaic.models.identity.browser_access_configuration import BrowserAccessCon
 from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from mosaic.components.persistence.conversation_metadata_repository import ConversationMetadataRepository
+from mosaic.components.persistence.conversation_job_repository import ConversationJobRepository
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
@@ -90,9 +92,9 @@ class TestConversationApi(unittest.TestCase):
             return record
 
         self.application = self._backend()
-        self.client = TestClient(self.application)
-        self.client.__enter__()
-        self.addCleanup(self.client.__exit__, None, None, None)
+        self.client_stack = ExitStack()
+        self.addCleanup(self.client_stack.close)
+        self.client = self.client_stack.enter_context(TestClient(self.application, raise_server_exceptions=False))
         self.headers = {'Authorization': 'Bearer synthetic-token-a'}
 
     def _backend(self) -> FastAPI:
@@ -198,6 +200,78 @@ class TestConversationApi(unittest.TestCase):
         self.assertEqual(self.client.get(path, headers=foreign).status_code, 404)
         self.assertEqual(self.client.get(path + '/events', headers=foreign).status_code, 404)
         self.assertEqual(self.client.post(path + '/stop', headers=foreign).status_code, 404)
+
+    def test_job_submission_retry_returns_original_job_after_completion(self) -> None:
+        self._install_stream()
+        conversation_id = self._create()['conversation_id']
+        path = f'/api/v1/conversations/{conversation_id}/jobs'
+        headers = {**self.headers, 'Idempotency-Key': str(uuid4())}
+        message = {'text': 'Read synthetic status'}
+        first = self.client.post(path, headers=headers, json=message)
+        self.assertEqual(first.status_code, 202)
+        job_id = first.json()['job_id']
+        retry = self.client.post(path, headers=headers, json=message)
+        self.assertEqual(retry.status_code, 202)
+        self.assertEqual(retry.json()['job_id'], job_id)
+        self._wait_for_job(f'/api/v1/conversations/jobs/{job_id}', 'succeeded')
+
+        retry = self.client.post(path, headers=headers, json=message)
+        self.assertEqual(retry.status_code, 202)
+        self.assertEqual(retry.json()['job_id'], job_id)
+        self.assertEqual(retry.json()['status'], 'succeeded')
+        changed = self.client.post(path, headers=headers, json={'text': 'Different text'})
+        self.assertEqual(changed.status_code, 409)
+        self.assertEqual(changed.json()['error_code'], 'idempotency_conflict')
+        foreign = self.client.post(
+            path, headers={**headers, 'Authorization': 'Bearer synthetic-token-b'}, json=message,
+        )
+        self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(len(self.invocations), 1)
+
+    def test_restart_fails_abandoned_jobs_and_recovers_owned_sessions(self) -> None:
+        owned = TrustedRequestContext(app_name='synthetic-app', user_id='synthetic-user-a')
+        jobs = {}
+        patches = []
+
+        @self.private.patch('/apps/{app_name}/users/{user_id}/sessions/{session_id}')
+        async def patch_session(app_name: str, user_id: str, session_id: str, request: Request) -> dict[str, Any]:
+            patches.append(session_id)
+            if session_id == str(jobs['stopping'][0]):
+                raise HTTPException(status_code=500, detail='Synthetic persistence failure')
+            record = self.records[(app_name, user_id, session_id)]
+            record['state'].update((await request.json())['state_delta'])
+            return record
+
+        for status in ('queued', 'running', 'stopping'):
+            conversation_id = UUID(self._create()['conversation_id'])
+            with self.database.create_session() as session, session.begin():
+                repository = ConversationJobRepository(session)
+                job_id = repository.reserve(owned, conversation_id, 'Read synthetic status.')
+            if status != 'queued':
+                self.records[(owned.app_name, owned.user_id, str(conversation_id))]['state']['mosaic:orchestration'] = (
+                    OrchestrationState.start(f'synthetic-{status}').model_dump(mode='json')
+                )
+                with self.database.create_session() as session, session.begin():
+                    repository = ConversationJobRepository(session)
+                    self.assertTrue(repository.claim(owned, job_id))
+                    if status == 'stopping':
+                        self.assertTrue(repository.request_stop(owned, job_id))
+            jobs[status] = conversation_id, job_id
+
+        with self.assertRaisesRegex(RuntimeError, 'already owns'), TestClient(self._backend()):
+            self.fail('A second runtime must not acquire the same job database.')
+        self.assertEqual(patches, [])
+        self.client_stack.close()
+
+        with TestClient(self._backend()) as restarted:
+            for status, (conversation_id, job_id) in jobs.items():
+                with self.subTest(status=status):
+                    recovered = restarted.get(f'/api/v1/conversations/jobs/{job_id}', headers=self.headers)
+                    self.assertEqual(recovered.json()['status'], 'failed')
+                    detail = restarted.get(f'/api/v1/conversations/{conversation_id}', headers=self.headers).json()
+                    self.assertEqual(detail['can_continue'], status != 'stopping')
+                    self.assertEqual(detail['is_interrupted'], status == 'stopping')
+        self.assertCountEqual(patches, [str(jobs['running'][0]), str(jobs['stopping'][0])])
 
     def test_job_stop_waits_for_private_close_and_blocks_unsafe_follow_up(self) -> None:
         self._check_job_stop_and_follow_up(patch_succeeds=False)
@@ -356,6 +430,7 @@ class TestConversationApi(unittest.TestCase):
         response = self.client.post(path + '/messages', headers=self.headers, json={'text': 'Hello'})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.private_stream_closed)
+        self.client_stack.close()
         with TestClient(self._backend()) as restarted:
             detail = restarted.get(path, headers=self.headers)
             self.assertEqual(detail.status_code, 200)
@@ -374,10 +449,10 @@ class TestConversationApi(unittest.TestCase):
             self.assertEqual(len(self.invocations), before)
             foreign = restarted.post(path + '/messages', headers={'Authorization': 'Bearer synthetic-token-b'}, json={'text': 'Hello'})
             self.assertEqual(foreign.status_code, 404)
-        self.assertEqual(self.client.get('/ready').status_code, 200)
-        fresh = self._create()
-        self.assertTrue(fresh['can_continue'])
-        self.assertFalse(fresh['is_interrupted'])
+            self.assertEqual(restarted.get('/ready').status_code, 200)
+            fresh = restarted.post('/api/v1/conversations', headers=self.headers, json={}).json()
+            self.assertTrue(fresh['can_continue'])
+            self.assertFalse(fresh['is_interrupted'])
 
     def test_normal_completion_and_clarification_allow_next_message(self) -> None:
         for phase in ('completed', 'awaiting_clarification'):
@@ -550,6 +625,7 @@ class TestConversationApi(unittest.TestCase):
         self,
     ) -> None:
         created = self._create()
+        self.client_stack.close()
         with TestClient(self._backend()) as restarted:
             restarted.cookies.set('mosaic_pilot_session', 'synthetic-token-a')
             response = restarted.get(
@@ -744,14 +820,11 @@ class TestConversationApi(unittest.TestCase):
         self.assertNotIn('synthetic-private-detail', missing.text)
 
     def test_metadata_failure_is_safe_and_ada_orphan_is_not_listed(self) -> None:
-        with (
-            patch(
-                'mosaic.components.api.conversation_service.ConversationService._record_creation',
-                side_effect=RuntimeError('synthetic-private-database-detail'),
-            ),
-            TestClient(self._backend(), raise_server_exceptions=False) as client,
+        with patch(
+            'mosaic.components.api.conversation_service.ConversationService._record_creation',
+            side_effect=RuntimeError('synthetic-private-database-detail'),
         ):
-            failure = client.post(
+            failure = self.client.post(
                 '/api/v1/conversations', headers=self.headers, json={}
             )
         self.assertEqual(failure.status_code, 500)

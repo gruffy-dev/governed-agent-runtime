@@ -90,13 +90,20 @@ class ConversationApiContract:
         }
         paths['/api/v1/conversations/{conversation_id}/jobs'] = {
             'post': self._operation(
-                'submitConversationJob', 'Queue an owned goal and return a job ID.',
+                'submitConversationJob', 'Queue an owned goal and return a job ID. '
+                'Retrying the same text with the same Idempotency-Key returns the original job.',
                 ConversationJobDetail, success_status=202, request_model=SubmitMessageRequest,
                 owned_conversation=True,
             ),
         }
-        paths['/api/v1/conversations/{conversation_id}/jobs']['post']['responses']['409'] = self._response(
-            ApiErrorResponse, 'The conversation is busy or interrupted.',
+        submission = paths['/api/v1/conversations/{conversation_id}/jobs']['post']
+        submission['parameters'].append({
+            'name': 'Idempotency-Key', 'in': 'header', 'required': False,
+            'description': 'UUID scoped to this conversation. Reuse it only when retrying the same submission.',
+            'schema': {'type': 'string', 'format': 'uuid'},
+        })
+        submission['responses']['409'] = self._response(
+            ApiErrorResponse, 'The conversation is busy or interrupted, or the key was used with different text.',
         )
         for suffix, method, name, description in (
             ('', 'get', 'getConversationJob', 'Return owned job status and its saved result.'),

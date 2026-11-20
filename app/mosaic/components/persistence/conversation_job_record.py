@@ -15,6 +15,7 @@ class ConversationJobRecord(MosaicDatabaseRecord):
             name='ck_conversation_jobs_status',
         ),
         sa.Index('ix_conversation_jobs_conversation', 'conversation_id', 'created_at'),
+        sa.Index('ux_conversation_jobs_submission_key', 'conversation_id', 'submission_key', unique=True),
     )
 
     job_id: Mapped[str] = mapped_column(sa.String(36))
@@ -27,6 +28,7 @@ class ConversationJobRecord(MosaicDatabaseRecord):
         nullable=False,
     )
     request_text: Mapped[str] = mapped_column(sa.Text(), nullable=False)
+    submission_key: Mapped[str | None] = mapped_column(sa.String(36))
     status: Mapped[str] = mapped_column(sa.String(24), nullable=False)
     result_text: Mapped[str | None] = mapped_column(sa.Text())
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
