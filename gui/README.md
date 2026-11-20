@@ -212,12 +212,16 @@ UUID reference matching X-Correlation-ID. Include that reference when reporting
 an issue. Missing or malformed references are omitted. Stream failures retain
 the originating response reference; tokens and raw provider diagnostics remain hidden.
 
-Native ADK partial text is incremental; final aggregated text replaces the
-partial turn instead of duplicating it. Only text is submitted. Conversation
-switching and New conversation are disabled during streaming. Stop aborts the
-request; the backend may permanently mark that conversation interrupted.
-Interrupted history stays readable and its composer is disabled. No stream is
-reconnected, replayed or automatically retried. Start a new conversation.
+Chat submits text to the background job API and follows the job's event stream.
+Native ADK partial text is incremental. Final aggregated text replaces the
+partial turn, and chat reloads saved history after the job ends. After a dropped
+stream, the browser tries once to reconnect from its last received event.
+Closing the browser or signing out detaches the stream. Reopening the
+conversation finds the latest job and reconnects if it is still active.
+Stop requests cancellation and waits for the backend to finish. If the backend
+cannot recover the conversation, the interrupted history stays readable and
+its composer is disabled. Retrying a pending draft in the same page reuses
+its submission key.
 
 While a response is active, one temporary activity panel shows the most recent
 observed tool operation and elapsed request time. Successful `load_skills` results
@@ -239,8 +243,9 @@ There are no custom SSE event names or model narration. It never advances stages
 a timer. Parallel activity counts appear only when calls carry reliable IDs.
 Without matching events or safe metadata, it remains generic. A ticking elapsed
 timer measures waiting time, not backend liveness. The panel disappears and its
-timer stops on completion, error, cancellation or sign-out; progress is neither
-saved in chat history nor replayed when reopening a conversation. A follow-up
+timer stops on completion, error, cancellation or sign-out. Reconnecting to an
+active job can replay its activity, and saved chat history shows the messages.
+A follow-up
 that reuses Skills without another load event may have no selected-Skill label.
 Real event timing depends on the installed ADA/ADK and any gateway buffering;
 validate this against the target runtime. No reasoning summaries are inferred.

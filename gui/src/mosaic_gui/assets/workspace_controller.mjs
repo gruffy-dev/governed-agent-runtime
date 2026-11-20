@@ -1,5 +1,5 @@
 import {ApiClient} from "./api_client.mjs";
-import {AdkStream} from "./adk_stream.mjs";
+import {ConversationJobStream} from "./conversation_job_stream.mjs";
 import {InvocationActivity} from "./invocation_activity.mjs";
 
 export class WorkspaceController {
@@ -8,6 +8,9 @@ export class WorkspaceController {
     #signedIn = false;
     #busy = false;
     #streamController = null;
+    #jobId = null;
+    #stopping = false;
+    #pendingSubmission = null;
     #operation = null;
     #workspace = null;
     #skillsOpen = false;
@@ -40,7 +43,7 @@ export class WorkspaceController {
         window.mosaicSkillState = state => this.#acceptSkillState(state);
         window.mosaicComposerAction = (id, prompt) => {
             if (id === "send-message") this.#submit(prompt);
-            else if (id === "stop-stream") this.#streamController?.abort();
+            else if (id === "stop-stream") this.#stopJob();
         };
         window.mosaicTranscript = result => {
             if (!this.#signedIn || this.#streamController || result?.sequence !== this.#renderSequence) return;
@@ -51,9 +54,6 @@ export class WorkspaceController {
         document.getElementById("sign-in-form").addEventListener("submit", event => {event.preventDefault(); this.#signIn();});
         document.getElementById("sign-out").addEventListener("click", () => this.#signOut());
         for (const side of ["history", "skills"]) this.#resize(side);
-        window.addEventListener("beforeunload", event => {
-            if (this.#streamController) {event.preventDefault(); event.returnValue = "";}
-        });
         this.#bootstrap();
     }
     static start() {
@@ -157,7 +157,6 @@ export class WorkspaceController {
         /**
          * Clear the cookie and all visible identity/history, guarding late responses.
          */
-        if (this.#streamController && !window.confirm("Signing out stops this response and may make this conversation read-only. Continue?")) return;
         ++this.#epoch;
         this.#reset();
         this.#busy = true;
@@ -185,6 +184,8 @@ export class WorkspaceController {
         this.#props("conversation-row-ids", {data: []});
         this.#props("conversation-sidebar-view", {data: null});
         this.#streamController = this.#operation = null;
+        this.#jobId = this.#pendingSubmission = null;
+        this.#stopping = false;
         document.getElementById("pilot-token").value = "";
         this.#props("message-input", {value: ""});
         for (const id of ["user-label", "message-transcript"]) this.#props(id, {children: ""});
@@ -211,7 +212,7 @@ export class WorkspaceController {
     }
     async #loadConversation(id) {
         /**
-         * Load persisted user/assistant history without replaying interrupted streams.
+         * Load saved history and attach to an active job if one exists.
          * :param id: Conversation selected from this user's server-owned history list.
          */
         if (this.#busy || this.#isSavingSkills() || this.#streamController || !this.#signedIn) return;
@@ -219,11 +220,15 @@ export class WorkspaceController {
         this.#busy = true;
         this.#operation = new AbortController();
         this.#controls();
+        let detail;
         try {
-            const detail = await this.#client.request("/api/v1/conversations/" + encodeURIComponent(id), {signal: this.#operation.signal});
+            detail = await this.#client.request("/api/v1/conversations/" + encodeURIComponent(id), {signal: this.#operation.signal});
             if (epoch === this.#epoch) this.#select(detail);
         } catch (error) {if (epoch === this.#epoch) this.#failure(error);}
         finally {if (epoch === this.#epoch) {this.#busy = false; this.#operation = null; this.#controls();}}
+        if (epoch === this.#epoch && ConversationJobStream.isActive(detail?.latest_job)) {
+            await this.#followJob(id, detail.latest_job, epoch);
+        }
     }
     #select(detail) {
         /**
@@ -231,101 +236,150 @@ export class WorkspaceController {
          * :param detail: Public conversation detail, or null for an unsaved blank chat.
          */
         this.#conversation = detail;
-        this.#messages = (detail?.messages || []).map(message => ({role: message.role, text: message.text}));
+        this.#messages = (detail?.messages || []).map(message => ({id: message.message_id, role: message.role, text: message.text}));
         this.#props("message-input", {value: ""});
         this.#props("conversation-title", {children: detail?.title || "New conversation"});
-        this.#props("workspace-alert", {is_open: detail?.can_continue === false, color: "warning", children: detail?.is_interrupted ? "Interrupted — this conversation cannot continue. Saved history is available. Start a new conversation." : "This conversation is unavailable while an invocation is active. Start a new conversation or reopen it later."});
+        const warning = detail?.is_interrupted
+            ? "Interrupted — this conversation cannot continue. Saved history is available. Start a new conversation."
+            : detail?.can_continue === false
+                ? "A response is still running. Reopen this conversation to reconnect."
+                : detail?.latest_job?.status === "failed"
+                    ? "The last response failed. You can send another message."
+                    : detail?.latest_job?.status === "cancelled" ? "Response stopped. You can send another message." : "";
+        this.#props("workspace-alert", {is_open: Boolean(warning), color: "warning", children: warning});
         this.#renderMessages();
         this.#controls();
     }
     async #submit(prompt) {
         /**
-         * Save a blank chat on its first send, then stream text without automatic retry.
+         * Save a blank chat on first send and submit the message as a background job.
          * :param prompt: Text held in the browser's Dash composer.
          */
         if (this.#busy || this.#isSavingSkills() || this.#streamController || !this.#signedIn || this.#conversation?.can_continue === false) return;
         const text = (prompt || "").trim();
         if (!text) return;
         const epoch = this.#epoch;
-        if (!this.#conversation) {
-            this.#busy = true;
-            this.#controls();
-            try {
-                const detail = await this.#client.request("/api/v1/conversations", {method: "POST", body: {}});
+        const controller = new AbortController();
+        this.#operation = controller;
+        this.#busy = true;
+        this.#controls();
+        let job;
+        let id;
+        try {
+            if (!this.#conversation) {
+                const detail = await this.#client.request("/api/v1/conversations", {method: "POST", body: {}, signal: controller.signal});
                 if (epoch !== this.#epoch) return;
                 this.#conversation = detail;
-            } catch (error) {
-                if (epoch === this.#epoch) this.#failure(error);
-                return;
-            } finally {
-                if (epoch === this.#epoch) {this.#busy = false; this.#controls();}
             }
+            id = this.#conversation.conversation_id;
+            if (this.#pendingSubmission?.id !== id || this.#pendingSubmission.text !== text) {
+                this.#pendingSubmission = {id, text, key: crypto.randomUUID()};
+            }
+            job = await this.#client.request("/api/v1/conversations/" + encodeURIComponent(id) + "/jobs", {
+                method: "POST", body: {text}, signal: controller.signal, submissionKey: this.#pendingSubmission.key,
+            });
+            if (epoch !== this.#epoch) return;
+            this.#pendingSubmission = null;
+            this.#props("message-input", {value: ""});
+            if (ConversationJobStream.isActive(job)) this.#messages.push({role: "user", text});
+        } catch (error) {
+            if (epoch === this.#epoch) this.#failure(error);
+        } finally {
+            if (epoch === this.#epoch) {this.#operation = null; this.#busy = false; this.#controls();}
         }
-        const id = this.#conversation.conversation_id;
+        if (job && epoch === this.#epoch) await this.#followJob(id, job, epoch);
+    }
+    async #followJob(id, job, epoch) {
+        /**
+         * Attach to an owned job, then reload the saved history for its outcome.
+         * :param id: Conversation being viewed.
+         * :param job: Current job ID and status.
+         * :param epoch: Identity generation guarding late responses.
+         */
         const controller = new AbortController();
         this.#streamController = controller;
-        this.#startActivity(controller);
-        this.#props("message-input", {value: ""});
+        this.#jobId = job.job_id;
+        this.#stopping = job.status === "stopping";
         this.#props("workspace-alert", {is_open: false});
-        this.#messages.push({role: "user", text}, {role: "assistant", text: ""});
-        const answerIndex = this.#messages.length - 1;
-        this.#renderMessages();
-        this.#controls();
-        let reader;
         let failure = null;
-        let correlationId = null;
         try {
-            const response = await this.#client.stream(id, text, controller.signal);
-            correlationId = response.headers.get("x-correlation-id");
-            reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            const activity = new InvocationActivity(this.#workspace?.skills || [], view => {
-                if (epoch === this.#epoch && this.#streamController === controller) this.#renderActivity(view);
-            });
-            const projection = new AdkStream(answer => {
-                if (epoch !== this.#epoch) return;
-                activity.writing();
-                this.#messages[answerIndex].text = answer;
+            if (ConversationJobStream.isActive(job)) {
+                const answer = {role: "assistant", text: ""};
+                this.#messages.push(answer);
+                this.#startActivity(controller);
                 this.#renderMessages();
-            }, event => activity.accept(event));
-            while (true) {
-                const {value, done} = await reader.read();
-                if (done) break;
-                projection.feed(decoder.decode(value, {stream: true}));
+                this.#controls();
+                const current = () => epoch === this.#epoch && this.#streamController === controller;
+                const activity = new InvocationActivity(this.#workspace?.skills || [], view => {
+                    if (current()) this.#renderActivity(view);
+                });
+                const outcome = await ConversationJobStream.follow(this.#client, job.job_id, controller.signal, text => {
+                    if (!current()) return;
+                    activity.writing();
+                    answer.text = text;
+                    this.#renderMessages();
+                }, event => {
+                    if (!current()) return;
+                    activity.accept(event);
+                    if (event.id && event.content?.role === "model" && event.content?.parts?.some(part => part.text)) {
+                        this.#messages = this.#messages.filter(message => message.id !== event.id);
+                    }
+                });
+                if (outcome.job.status === "failed") failure = outcome.failure;
+                if (ConversationJobStream.isActive(outcome.job)) {
+                    failure = new Error("The response is still running. Reopen this conversation to reconnect.");
+                }
             }
-            projection.feed(decoder.decode());
-            projection.finish();
         } catch (error) {
-            failure = controller.signal.aborted ? new Error("Response stopped. This conversation may be read-only; saved history remains available.") : error;
-            if (!controller.signal.aborted && !failure.correlationId) failure.correlationId = correlationId;
-            controller.abort();
+            if (!controller.signal.aborted) failure = error;
         } finally {
             if (this.#streamController === controller) this.#clearActivity();
-            try {if (reader) {await reader.cancel(); reader.releaseLock();}} catch { /* The transport may already be closed. */ }
+        }
+        if (epoch !== this.#epoch) return;
+        this.#streamController = null;
+        this.#jobId = null;
+        this.#stopping = false;
+        this.#busy = true;
+        this.#controls();
+        if (failure?.status === 401) {this.#failure(failure); return;}
+        try {
+            const detail = await this.#client.request("/api/v1/conversations/" + encodeURIComponent(id));
             if (epoch !== this.#epoch) return;
-            this.#streamController = null;
-            this.#busy = true;
-            this.#controls();
-            if (failure?.status === 401) {this.#failure(failure); this.#busy = false; this.#controls(); return;}
-            try {
-                const detail = await this.#client.request("/api/v1/conversations/" + encodeURIComponent(id));
-                if (epoch !== this.#epoch) return;
-                this.#select(detail);
-                await this.#refreshHistory(epoch);
-                const workspace = await this.#client.request("/api/v1/workspace");
-                if (epoch === this.#epoch) {this.#workspace = workspace; this.#renderSkills();}
-            } catch (error) {
-                if (epoch === this.#epoch) {
-                    this.#conversation.can_continue = false;
-                    this.#failure(error);
-                }
-            } finally {
-                if (epoch === this.#epoch) {
-                    this.#busy = false;
-                    if (failure) this.#failure(failure);
-                    this.#controls();
-                }
+            this.#select(detail);
+            await this.#refreshHistory(epoch);
+            const workspace = await this.#client.request("/api/v1/workspace");
+            if (epoch === this.#epoch) {this.#workspace = workspace; this.#renderSkills();}
+        } catch (error) {
+            if (epoch === this.#epoch) {
+                this.#conversation.can_continue = false;
+                failure = error;
             }
+        } finally {
+            if (epoch === this.#epoch) {
+                this.#busy = false;
+                if (failure) this.#failure(failure);
+                this.#controls();
+            }
+        }
+    }
+    async #stopJob() {
+        /**
+         * Ask the backend to stop the job while keeping its event subscription open.
+         */
+        const jobId = this.#jobId;
+        if (!jobId || this.#stopping) return;
+        const epoch = this.#epoch;
+        this.#stopping = true;
+        this.#controls();
+        try {
+            await this.#client.request(ConversationJobStream.path(jobId) + "/stop", {
+                method: "POST", signal: this.#streamController.signal,
+            });
+        } catch (error) {
+            if (epoch !== this.#epoch || this.#jobId !== jobId) return;
+            this.#stopping = false;
+            this.#failure(error);
+            this.#controls();
         }
     }
     #startActivity(controller) {
@@ -535,8 +589,8 @@ export class WorkspaceController {
         this.#props("new-conversation", {disabled: blocked || !this.#signedIn});
         this.#props("send-message", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
         this.#props("message-input", {disabled: blocked || !this.#signedIn || this.#conversation?.can_continue === false});
-        this.#props("stop-stream", {style: {display: streaming ? "inline-block" : "none"}});
-        this.#props("conversation-state", {children: streaming ? "Responding" : this.#conversation?.is_interrupted ? "Interrupted" : this.#conversation?.can_continue === false ? "Unavailable" : "Ready", color: streaming ? "secondary" : this.#conversation?.can_continue === false ? "warning" : "success"});
+        this.#props("stop-stream", {style: {display: streaming ? "inline-block" : "none"}, disabled: !this.#jobId || this.#stopping});
+        this.#props("conversation-state", {children: streaming ? (this.#stopping ? "Stopping…" : "Responding") : this.#conversation?.is_interrupted ? "Interrupted" : this.#conversation?.can_continue === false ? "Unavailable" : "Ready", color: streaming ? "secondary" : this.#conversation?.can_continue === false ? "warning" : "success"});
         this.#publishSidebarView();
     }
     #failure(error) {

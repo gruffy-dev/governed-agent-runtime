@@ -14,21 +14,23 @@ class TestApiClient {
                 assert.equal(captured.options.credentials, "include");
                 assert.equal(captured.options.redirect, "error");
                 assert.equal(captured.options.cache, "no-store");
-                assert.equal(captured.options.headers.Authorization, undefined);
+                assert.equal(captured.options.headers?.Authorization, undefined);
                 assert.equal(JSON.parse(captured.options.body).token, "synthetic-token");
             } finally {globalThis.fetch = original;}
         });
-        test("stream submits text only and retains its explicit cancellation signal", async () => {
+        test("job replay requests the saved cursor and retains its subscription signal", async () => {
             const original = globalThis.fetch;
             let captured;
             const controller = new AbortController();
             globalThis.fetch = async (url, options) => {captured = {url, options}; return new Response("data: {}\n\n", {headers: {"Content-Type": "text/event-stream"}});};
             try {
-                await new ApiClient("https://api.example.com").stream("synthetic-id", "Synthetic text", controller.signal);
-                assert.deepEqual(JSON.parse(captured.options.body), {text: "Synthetic text"});
+                await new ApiClient("https://api.example.com").stream("synthetic-id", 5, controller.signal);
+                assert.equal(captured.url, "https://api.example.com/api/v1/conversations/jobs/synthetic-id/events?after=5");
+                assert.equal(captured.options.method, "GET");
+                assert.equal(captured.options.body, undefined);
                 assert.equal(captured.options.signal, controller.signal);
                 assert.equal(captured.options.credentials, "include");
-                assert.equal(captured.options.headers.Authorization, undefined);
+                assert.equal(captured.options.headers?.Authorization, undefined);
             } finally {globalThis.fetch = original;}
         });
         test("authentication failures contain guidance, not private response detail", async () => {
@@ -43,7 +45,7 @@ class TestApiClient {
             const reference = "12345678-1234-1234-1234-123456789abc";
             globalThis.fetch = async () => Response.json({detail: "private synthetic diagnostic"}, {headers: {"X-Correlation-ID": reference}});
             try {
-                await assert.rejects(new ApiClient("https://api.example.com").stream("synthetic-id", "Synthetic text", new AbortController().signal), error => error.correlationId === reference && !error.message.includes("private"));
+                await assert.rejects(new ApiClient("https://api.example.com").stream("synthetic-id", 5, new AbortController().signal), error => error.correlationId === reference && !error.message.includes("private"));
             } finally {globalThis.fetch = original;}
         });
     }

@@ -7,20 +7,24 @@ export class ApiClient {
          */
         this.#origin = origin;
     }
-    async request(path, {method = "GET", body, signal} = {}) {
+    async request(path, {method = "GET", body, signal, submissionKey} = {}) {
         /**
          * Make a bounded JSON request using the protected browser cookie.
          * :param path: Owned public API path.
          * :param method: HTTP operation.
          * :param body: Optional JSON request body held only for this request.
          * :param signal: Optional cancellation signal for superseded user operations.
+         * :param submissionKey: Optional key for replay-safe job submission.
          * :return: Decoded JSON or null for an empty success.
          */
         const timeout = AbortSignal.timeout(15000);
         let response;
         try { response = await fetch(this.#origin + path, {
             method, credentials: "include", cache: "no-store", redirect: "error",
-            headers: body === undefined ? {} : {"Content-Type": "application/json"},
+            headers: {
+                ...(body === undefined ? {} : {"Content-Type": "application/json"}),
+                ...(submissionKey ? {"Idempotency-Key": submissionKey} : {}),
+            },
             body: body === undefined ? undefined : JSON.stringify(body),
             signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         }); } catch (error) {
@@ -32,18 +36,17 @@ export class ApiClient {
         try { return await response.json(); }
         catch { throw new Error("The backend returned an invalid response."); }
     }
-    async stream(conversationId, text, signal) {
+    async stream(jobId, after, signal) {
         /**
-         * Submit text and return the native ADK SSE response without a token header.
-         * :param conversationId: Owned conversation reference returned by the backend.
-         * :param text: Text-only user prompt.
-         * :param signal: User Stop/sign-out cancellation signal.
+         * Attach to an owned job's replay and live events.
+         * :param jobId: Server-generated job identifier.
+         * :param after: Last complete SSE frame already consumed.
+         * :param signal: Cancellation signal for this subscriber.
          * :return: Fetch response whose stream must be consumed or cancelled.
          */
         let response;
-        try { response = await fetch(this.#origin + "/api/v1/conversations/" + encodeURIComponent(conversationId) + "/messages", {
-            method: "POST", credentials: "include", cache: "no-store", redirect: "error",
-            headers: {"Content-Type": "application/json"}, body: JSON.stringify({text}), signal,
+        try { response = await fetch(this.#origin + "/api/v1/conversations/jobs/" + encodeURIComponent(jobId) + "/events?after=" + after, {
+            method: "GET", credentials: "include", cache: "no-store", redirect: "error", signal,
         }); } catch (error) {
             if (signal.aborted) throw error;
             throw new Error("Unable to reach the backend. Check its address and browser access configuration.");

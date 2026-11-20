@@ -18,7 +18,7 @@ class TestWorkspaceController {
             addEventListener: (name, callback) => listeners.set(name, callback)};
         globalThis.window = {addEventListener() {}, confirm: () => true, dash_clientside: {set_props: (id, props) => Object.assign(element(id), props)}};
         globalThis.requestAnimationFrame = callback => callback();
-        const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: initialState.messages || []};
+        const detail = {conversation_id: "synthetic-chat", title: null, can_continue: true, is_interrupted: false, messages: initialState.messages || [], latest_job: initialState.latestJob || null};
         const state = {failCreation: false, failureStatus: 503, correlationId: null, failSignIn: false, failStream: false, manualStream: null, skills: [], catalogue: [], version: 1, now: 0, ...initialState};
         globalThis.performance = {now: () => state.now};
         globalThis.setInterval = callback => {const id = {}; timers.set(id, callback); return id;};
@@ -65,7 +65,46 @@ class TestWorkspaceController {
                 return Response.json(detail, {status: 201});
             }
             if (path === "/api/v1/conversations") return Response.json({conversations: state.conversations || []});
-            if (path.endsWith("/messages")) return new Response(state.manualStream ? state.manualStream(options.signal) : state.failStream ? 'data: {"error":"private synthetic diagnostic"}\n\n' : 'data: {"content":{"role":"model","parts":[{"text":"Synthetic answer"}]},"partial":false}\n\n', {headers: {"Content-Type": "text/event-stream", ...(state.correlationId ? {"X-Correlation-ID": state.correlationId} : {})}});
+            if (path === "/api/v1/conversations/synthetic-chat/jobs") {
+                if (state.failSubmission) return failure();
+                detail.latest_job = {job_id: "synthetic-job", status: "running"};
+                return Response.json(detail.latest_job, {status: 202});
+            }
+            if (path === "/api/v1/conversations/jobs/synthetic-job/stop") {
+                detail.latest_job.status = "cancelled";
+                state.stopStream?.();
+                return Response.json(detail.latest_job);
+            }
+            if (path === "/api/v1/conversations/jobs/synthetic-job") {
+                detail.latest_job.status = state.jobStatus || (detail.latest_job.status === "cancelled" ? "cancelled" : state.failStream ? "failed" : "succeeded");
+                return Response.json(detail.latest_job);
+            }
+            if (path === "/api/v1/conversations/jobs/synthetic-job/events") {
+                let body = state.manualStream ? state.manualStream(options.signal, Number(new URL(url).searchParams.get("after")))
+                    : state.failStream ? 'data: {"error":"private synthetic diagnostic"}\n\n'
+                    : 'data: {"content":{"role":"model","parts":[{"text":"Synthetic answer"}]},"partial":false}\n\n';
+                if (body instanceof ReadableStream) {
+                    const reader = body.getReader();
+                    let ended = false;
+                    body = new ReadableStream({
+                        start(controller) {
+                            state.stopStream = () => {
+                                ended = true;
+                                controller.close();
+                                reader.cancel().catch(() => {});
+                            };
+                        },
+                        async pull(controller) {
+                            const {value, done} = await reader.read();
+                            if (ended) return;
+                            if (done) {ended = true; controller.close();}
+                            else controller.enqueue(value);
+                        },
+                        cancel() {ended = true; return reader.cancel();},
+                    });
+                }
+                return new Response(body, {headers: {"Content-Type": "text/event-stream", ...(state.correlationId ? {"X-Correlation-ID": state.correlationId} : {})}});
+            }
             if (path === "/api/v1/conversations/synthetic-chat") return Response.json(detail);
             throw new Error("Unexpected synthetic request: " + path);
         };
@@ -243,7 +282,7 @@ class TestWorkspaceController {
                 assert.equal(fixture.creations().length, 1);
                 assert.equal(fixture.element("message-input").value, "Keep this message");
                 assert.equal(fixture.element("send-message").disabled, false);
-                assert.equal(fixture.requests.some(request => request.url.endsWith("/messages")), false);
+                assert.equal(fixture.requests.some(request => request.url.endsWith("/synthetic-chat/jobs")), false);
                 fixture.state.failCreation = false;
                 fixture.click("send-message");
                 await this.settle();
@@ -333,6 +372,66 @@ class TestWorkspaceController {
                 assert.equal(fixture.timers.size, 0);
             } finally {fixture.restore();}
         });
+        test("reopening a running job replays after a dropped frame without duplicating text", async () => {
+            const messages = [{role: "user", text: "Resume this answer"}];
+            const subscriptions = [];
+            const fixture = this.setup({
+                messages,
+                latestJob: {job_id: "synthetic-job", status: "running"},
+                jobStatus: "running",
+                conversations: [{conversation_id: "synthetic-chat", title: "Saved chat"}],
+                manualStream: (_signal, after) => new ReadableStream({
+                    start(controller) {subscriptions.push({controller, after});},
+                }),
+            });
+            const frame = (id, text, partial = true) => new TextEncoder().encode(
+                "id: " + id + "\ndata: " + JSON.stringify({partial, content: {role: "model", parts: [{text}]}}) + "\n\n"
+            );
+            const answer = () => fixture.element("message-transcript").children.at(-1).props.children[1].props.children;
+            try {
+                await this.settle();
+                fixture.click("conversation-synthetic-chat");
+                await this.settle();
+                assert.equal(subscriptions[0].after, 0);
+                subscriptions[0].controller.enqueue(frame(1, "First "));
+                subscriptions[0].controller.enqueue(new TextEncoder().encode("id: 2\ndata: {"));
+                await this.settle();
+                assert.equal(answer(), "First ");
+                subscriptions[0].controller.error(new Error("Synthetic connection dropped"));
+                await this.settle();
+                assert.equal(subscriptions[1].after, 1);
+                subscriptions[1].controller.enqueue(frame(1, "First "));
+                subscriptions[1].controller.enqueue(frame(2, "second"));
+                await this.settle();
+                assert.equal(answer(), "First second");
+                fixture.state.jobStatus = "succeeded";
+                messages.push({role: "assistant", text: "First second"});
+                subscriptions[1].controller.enqueue(frame(3, "First second", false));
+                subscriptions[1].controller.close();
+                await this.settle();
+                assert.equal(answer(), "First second");
+                assert.equal(fixture.element("message-transcript").children.length, 2);
+                assert.equal(fixture.requests.some(request => request.options.method === "POST"), false);
+            } finally {fixture.restore();}
+        });
+        test("a failed acknowledgement leaves the draft and reuses its submission key", async () => {
+            const fixture = this.setup({failSubmission: true});
+            try {
+                await this.settle();
+                fixture.element("message-input").value = "Keep this draft";
+                fixture.click("send-message");
+                await this.settle();
+                assert.equal(fixture.element("message-input").value, "Keep this draft");
+                fixture.state.failSubmission = false;
+                fixture.click("send-message");
+                await this.settle();
+                const submissions = fixture.requests.filter(request => request.url.endsWith("/synthetic-chat/jobs"));
+                assert.equal(submissions.length, 2);
+                assert.match(submissions[0].options.headers["Idempotency-Key"], /^[0-9a-f-]{36}$/);
+                assert.equal(submissions[1].options.headers["Idempotency-Key"], submissions[0].options.headers["Idempotency-Key"]);
+                assert.equal(fixture.creations().length, 1);
+            } finally {fixture.restore();}
+        });
         test("cancellation, sign-out and late callbacks cannot leave progress or timers behind", async () => {
             for (const action of ["stop-stream", "sign-out"]) {
                 const fixture = this.setup();
@@ -347,6 +446,12 @@ class TestWorkspaceController {
                     const staleTick = [...fixture.timers.values()][0];
                     fixture.click(action);
                     await this.settle();
+                    const stopRequests = fixture.requests.filter(request => request.url.endsWith("/synthetic-job/stop"));
+                    assert.equal(stopRequests.length, action === "stop-stream" ? 1 : 0);
+                    if (action === "stop-stream") {
+                        assert.equal(stopRequests[0].options.method, "POST");
+                        assert.equal(fixture.element("send-message").disabled, false);
+                    }
                     assert.equal(fixture.timers.size, 0);
                     assert.equal(fixture.element("invocation-activity").style.display, "none");
                     staleTick();

@@ -4,6 +4,7 @@ export class AdkStream {
     #partial = "";
     #finalIds = new Set();
     #sawFinal = false;
+    #lastSequence = 0;
     #onText;
     #onEvent;
     constructor(onText, onEvent = null) {
@@ -39,17 +40,30 @@ export class AdkStream {
             throw new Error("The response ended before completion. Check the conversation status.");
         }
     }
+    get lastSequence() {
+        return this.#lastSequence;
+    }
+    resetConnection() {
+        /**
+         * Drop the unfinished frame from a disconnected transport before replay.
+         */
+        this.#buffer = "";
+    }
     #frame(frame) {
         /**
          * Select model text only; replace each partial turn with its final aggregate.
          * :param frame: Complete SSE record, including optional comments.
          */
-        const data = frame.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).replace(/^ /, "")).join("\n");
+        const lines = frame.split(/\r?\n/);
+        const sequence = Number(lines.find(line => line.startsWith("id:"))?.slice(3));
+        if (Number.isSafeInteger(sequence) && sequence <= this.#lastSequence) return;
+        const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).replace(/^ /, "")).join("\n");
         if (!data) return;
         let event;
         try { event = JSON.parse(data); } catch { throw new Error("The backend returned an invalid stream record."); }
         if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("The backend returned an invalid stream record.");
         if (event.error || event.errorCode || event.error_code) throw new Error("The model could not complete this response. Start a new conversation if it is marked interrupted.");
+        if (Number.isSafeInteger(sequence)) this.#lastSequence = sequence;
         if (!event.branch && event.partial !== true) this.#onEvent?.(event);
         if (event.branch || event.content?.role !== "model" || !Array.isArray(event.content.parts)) return;
         if (event.content.parts.some(part => part?.functionCall || part?.function_call || part?.functionResponse || part?.function_response)) return;

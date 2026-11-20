@@ -1,6 +1,7 @@
 import json
 import time
 from datetime import UTC, datetime
+from threading import Condition, Thread
 from uuid import uuid4
 
 from flask import Flask, Response, jsonify, request
@@ -10,6 +11,8 @@ class BrowserFixtureBackend:
     def __init__(self, gui_origin: str = 'http://127.0.0.1:8050') -> None:
         self.gui_origin = gui_origin
         self.records: dict[str, dict] = {}
+        self.jobs: dict[str, dict] = {}
+        self.job_changed = Condition()
         self.application = Flask(__name__)
         self.application.after_request(self.cors)
         self.application.add_url_rule(
@@ -32,10 +35,13 @@ class BrowserFixtureBackend:
             methods=['GET', 'OPTIONS'],
         )
         self.application.add_url_rule(
-            '/api/v1/conversations/<identifier>/messages',
-            view_func=self.stream,
+            '/api/v1/conversations/<identifier>/jobs',
+            view_func=self.submit_job,
             methods=['POST', 'OPTIONS'],
         )
+        self.application.add_url_rule('/api/v1/conversations/jobs/<job_id>', view_func=self.get_job)
+        self.application.add_url_rule('/api/v1/conversations/jobs/<job_id>/events', view_func=self.stream_job)
+        self.application.add_url_rule('/api/v1/conversations/jobs/<job_id>/stop', view_func=self.stop_job, methods=['POST'])
         for owner in ('synthetic-user-a', 'synthetic-user-b'):
             record = self.create_record(owner)
             record.update(
@@ -61,7 +67,7 @@ class BrowserFixtureBackend:
     def cors(self, response: Response) -> Response:
         response.headers['Access-Control-Allow-Origin'] = self.gui_origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Idempotency-Key'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST'
         response.headers['Access-Control-Expose-Headers'] = 'X-Correlation-ID'
         response.headers['X-Correlation-ID'] = str(uuid4())
@@ -138,6 +144,7 @@ class BrowserFixtureBackend:
             'can_continue': True,
             'is_interrupted': False,
             'messages': [],
+            'latest_job': None,
             'owner': owner,
         }
         self.records[identifier] = record
@@ -159,7 +166,7 @@ class BrowserFixtureBackend:
                 {
                     key: value
                     for key, value in self.public(record).items()
-                    if key != 'messages'
+                    if key not in ('messages', 'latest_job')
                 }
                 for record in self.records.values()
                 if record['owner'] == owner
@@ -174,134 +181,218 @@ class BrowserFixtureBackend:
             return jsonify(detail='Unavailable'), 404
         return jsonify(self.public(record))
 
-    def stream(self, identifier: str) -> Response:
+    def submit_job(self, identifier: str) -> Response:
         if request.method == 'OPTIONS':
             return Response(status=200)
         record = self.records.get(identifier)
         if record is None or record['owner'] != self.owner():
             return jsonify(detail='Unavailable'), 404
-        if not record['can_continue']:
-            return jsonify(error_code='conversation_interrupted'), 409
         text = request.get_json()['text']
-        record['can_continue'] = False
-        record['title'] = record['title'] or text[:70]
-        record['messages'].append({'role': 'user', 'text': text})
+        key = request.headers.get('Idempotency-Key')
+        with self.job_changed:
+            earlier = next(
+                (job for job in self.jobs.values() if key and job['conversation_id'] == identifier and job['key'] == key),
+                None,
+            )
+            if earlier is not None:
+                if earlier['text'] != text:
+                    return jsonify(error_code='idempotency_conflict'), 409
+                return jsonify(self.public_job(earlier)), 202
+            if not record['can_continue']:
+                return jsonify(error_code='conversation_busy'), 409
+            job = {
+                'job_id': str(uuid4()), 'conversation_id': identifier, 'status': 'running',
+                'result_text': None, 'events': [], 'key': key, 'text': text,
+            }
+            self.jobs[job['job_id']] = job
+            record['latest_job'] = {'job_id': job['job_id'], 'status': 'running'}
+            record['can_continue'] = False
+            record['title'] = record['title'] or text[:70]
+            record['messages'].append({'role': 'user', 'text': text})
+        Thread(target=self.run_job, args=(job, record, text), daemon=True).start()
+        return jsonify(self.public_job(job)), 202
 
+    def public_job(self, job: dict) -> dict:
+        return {key: job[key] for key in ('job_id', 'conversation_id', 'status', 'result_text')}
+
+    def owned_job(self, job_id: str) -> dict | None:
+        job = self.jobs.get(job_id)
+        if job is not None and self.records[job['conversation_id']]['owner'] == self.owner():
+            return job
+        return None
+
+    def get_job(self, job_id: str) -> Response:
+        job = self.owned_job(job_id)
+        if job is None:
+            return jsonify(detail='Unavailable'), 404
+        return jsonify(self.public_job(job))
+
+    def stop_job(self, job_id: str) -> Response:
+        job = self.owned_job(job_id)
+        if job is None:
+            return jsonify(detail='Unavailable'), 404
+        with self.job_changed:
+            if job['status'] == 'running':
+                job['status'] = 'stopping'
+                self.records[job['conversation_id']]['latest_job']['status'] = 'stopping'
+            return jsonify(self.public_job(job))
+
+    def stream_job(self, job_id: str) -> Response:
+        job = self.owned_job(job_id)
+        if job is None:
+            return jsonify(detail='Unavailable'), 404
+        after = request.args.get('after', 0, type=int)
+
+        def replay():
+            cursor = after
+            while True:
+                with self.job_changed:
+                    self.job_changed.wait_for(
+                        lambda: len(job['events']) > cursor or job['status'] in ('succeeded', 'cancelled', 'failed')
+                    )
+                    if len(job['events']) <= cursor:
+                        return
+                    frame = job['events'][cursor]
+                    cursor += 1
+                yield f'id: {cursor}\n{frame}'
+
+        return Response(replay(), mimetype='text/event-stream')
+
+    def run_job(self, job: dict, record: dict, text: str) -> None:
+        """
+        Produce one synthetic job independently of its browser stream.
+        """
         def events():
-            complete = False
             answer = '## Synthetic summary\n\nThe response arrived incrementally.\n\n```python\nprint("hello")\n```\n\n| Check | Result |\n| --- | --- |\n| Formatting | Ready |\n\n**This is test data, not a live model response.**'
             chunks = [answer[index : index + 14] for index in range(0, len(answer), 14)]
-            try:
-                if record['owner'].endswith('-a'):
-                    for part in (
-                        {'functionCall': {'name': 'load_skills', 'id': 'load'}},
-                        {
-                            'functionResponse': {
-                                'name': 'load_skills',
-                                'id': 'load',
-                                'response': {
-                                    'status': 'loaded',
-                                    'loaded_skills': [
-                                        {
-                                            'name': 'service-health',
-                                            'required_capability_names': [
-                                                'kubernetes.pods.status.read'
-                                            ],
-                                        }
-                                    ],
-                                },
-                            }
-                        },
-                        {
-                            'functionCall': {
-                                'name': 'discover_capabilities',
-                                'id': 'discovery',
-                            }
-                        },
-                        {
-                            'functionResponse': {
-                                'name': 'discover_capabilities',
-                                'id': 'discovery',
-                                'response': {
-                                    'status': 'available',
-                                    'capabilities': [
-                                        {
-                                            'name': 'kubernetes.pods.status.read',
-                                            'available': True,
-                                            'description': 'Review synthetic workload readiness.',
-                                        }
-                                    ],
-                                },
-                            }
-                        },
-                        {
-                            'functionCall': {
-                                'name': 'execute_capability',
-                                'id': 'check',
-                                'args': {
-                                    'capability_name': 'kubernetes.pods.status.read',
-                                },
-                            }
-                        },
-                        {
-                            'functionResponse': {
-                                'name': 'execute_capability',
-                                'id': 'check',
-                                'response': {'status': 'success'},
-                            }
-                        },
-                    ):
-                        yield (
-                            'data: '
-                            + json.dumps(
-                                {
-                                    'content': {
-                                        'role': 'model'
-                                        if 'functionCall' in part
-                                        else 'user',
-                                        'parts': [part],
+            if record['owner'].endswith('-a'):
+                for part in (
+                    {'functionCall': {'name': 'load_skills', 'id': 'load'}},
+                    {
+                        'functionResponse': {
+                            'name': 'load_skills',
+                            'id': 'load',
+                            'response': {
+                                'status': 'loaded',
+                                'loaded_skills': [
+                                    {
+                                        'name': 'service-health',
+                                        'required_capability_names': [
+                                            'kubernetes.pods.status.read'
+                                        ],
                                     }
-                                }
-                            )
-                            + '\n\n'
-                        )
-                        time.sleep(2 if 'slow' in text.lower() else 0.08)
-                for chunk in chunks:
-                    time.sleep(0.35 if 'slow' in text.lower() else 0.03)
+                                ],
+                            },
+                        }
+                    },
+                    {
+                        'functionCall': {
+                            'name': 'discover_capabilities',
+                            'id': 'discovery',
+                        }
+                    },
+                    {
+                        'functionResponse': {
+                            'name': 'discover_capabilities',
+                            'id': 'discovery',
+                            'response': {
+                                'status': 'available',
+                                'capabilities': [
+                                    {
+                                        'name': 'kubernetes.pods.status.read',
+                                        'available': True,
+                                        'description': 'Review synthetic workload readiness.',
+                                    }
+                                ],
+                            },
+                        }
+                    },
+                    {
+                        'functionCall': {
+                            'name': 'execute_capability',
+                            'id': 'check',
+                            'args': {
+                                'capability_name': 'kubernetes.pods.status.read',
+                            },
+                        }
+                    },
+                    {
+                        'functionResponse': {
+                            'name': 'execute_capability',
+                            'id': 'check',
+                            'response': {'status': 'success'},
+                        }
+                    },
+                ):
                     yield (
                         'data: '
                         + json.dumps(
                             {
-                                'partial': True,
                                 'content': {
-                                    'role': 'model',
-                                    'parts': [{'text': chunk}],
-                                },
+                                    'role': 'model'
+                                    if 'functionCall' in part
+                                    else 'user',
+                                    'parts': [part],
+                                }
                             }
                         )
                         + '\n\n'
                     )
+                    time.sleep(2 if 'slow' in text.lower() else 0.08)
+            for chunk in chunks:
+                time.sleep(0.35 if 'slow' in text.lower() else 0.03)
                 yield (
                     'data: '
                     + json.dumps(
                         {
-                            'id': str(uuid4()),
-                            'partial': False,
-                            'content': {'role': 'model', 'parts': [{'text': answer}]},
+                            'partial': True,
+                            'content': {
+                                'role': 'model',
+                                'parts': [{'text': chunk}],
+                            },
                         }
                     )
                     + '\n\n'
                 )
-                record['messages'].append({'role': 'assistant', 'text': answer})
-                complete = True
-            finally:
-                record.update(
-                    can_continue=complete,
-                    is_interrupted=not complete,
-                    last_activity_at=datetime.now(UTC).isoformat(),
+            yield (
+                'data: '
+                + json.dumps(
+                    {
+                        'id': str(uuid4()),
+                        'partial': False,
+                        'content': {'role': 'model', 'parts': [{'text': answer}]},
+                    }
                 )
+                + '\n\n'
+            )
+            return answer
 
-        return Response(events(), mimetype='text/event-stream')
+        frames = events()
+        status = 'failed'
+        try:
+            while True:
+                frame = next(frames)
+                with self.job_changed:
+                    if job['status'] == 'stopping':
+                        status = 'cancelled'
+                        break
+                    job['events'].append(frame)
+                    self.job_changed.notify_all()
+        except StopIteration as completed:
+            with self.job_changed:
+                if job['status'] == 'stopping':
+                    status = 'cancelled'
+                else:
+                    status = 'succeeded'
+                    job['result_text'] = completed.value
+                    record['messages'].append({'role': 'assistant', 'text': completed.value})
+        finally:
+            frames.close()
+            with self.job_changed:
+                job['status'] = status
+                record['latest_job']['status'] = status
+                record.update(can_continue=True, last_activity_at=datetime.now(UTC).isoformat())
+                self.job_changed.notify_all()
 
     @classmethod
     def run(cls) -> None:
