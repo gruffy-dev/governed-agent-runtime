@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from portalocker import AlreadyLocked, Lock
 from sqlalchemy import URL, Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -69,16 +70,17 @@ class MosaicDatabase:
 
         :raises RuntimeError: If another backend already owns this database.
         """
-        from fcntl import LOCK_EX, LOCK_NB, flock
-
         path = self._configuration.resolved_database_path
         lock_path = path.with_name(f'{path.name}.jobs.lock')
-        with lock_path.open('a', encoding='utf-8') as lock:
-            try:
-                flock(lock.fileno(), LOCK_EX | LOCK_NB)
-            except BlockingIOError:
-                raise RuntimeError('Another backend already owns this SQLite job database.') from None
+        lock = Lock(lock_path, mode='a', timeout=0, fail_when_locked=True)
+        try:
+            lock.acquire()
+        except AlreadyLocked:
+            raise RuntimeError('Another backend already owns this SQLite job database.') from None
+        try:
             yield
+        finally:
+            lock.release()
 
     def dispose(self) -> None:
         """Release pooled SQLite connections owned by the engine."""

@@ -1,6 +1,7 @@
 import os
 import ssl
 from pathlib import Path
+from sys import platform
 from typing import Literal, Self
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
@@ -69,6 +70,8 @@ class GuiConfiguration(BaseModel):
             if self.tls_cert_file is not None or self.tls_key_file is not None:
                 raise ValueError('TLS files require MOSAIC_GUI_SCHEME=https.')
         else:
+            if platform == 'win32':
+                raise ValueError('The Windows GUI listener supports HTTP only. Use MOSAIC_GUI_SCHEME=http or terminate TLS upstream.')
             if self.tls_cert_file is None or self.tls_key_file is None:
                 raise ValueError('HTTPS requires both a certificate and private key.')
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

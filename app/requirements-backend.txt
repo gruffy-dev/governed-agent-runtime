@@ -1,0 +1,2 @@
+# Supplemental dependency for the backend runtime.
+portalocker>=4.4.2,<5

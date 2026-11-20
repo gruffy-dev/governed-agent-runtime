@@ -12,7 +12,8 @@ dependencies = [
     "dash-bootstrap-components>=2,<3",
     "dash-extensions>=2.0.6,<3",
     "pydantic>=2.10,<3",
-    "gunicorn>=26.2,<27",
+    "gunicorn>=26.2,<27; sys_platform != 'win32'",
+    "waitress>=3.0.2,<4; sys_platform == 'win32'",
 ]
 
 [project.scripts]

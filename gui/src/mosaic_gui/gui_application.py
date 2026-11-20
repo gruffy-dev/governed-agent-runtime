@@ -1,4 +1,5 @@
 from pathlib import Path
+from sys import platform
 
 from dash import Dash
 from flask import Response, send_file
@@ -10,7 +11,6 @@ from .conversation_sidebar import (
 )
 from .gui_configuration import GuiConfiguration
 from .gui_layout import GuiLayout
-from .gui_server import GuiServer
 from .skill_editor import register_skill_editor
 from .skill_views import register_skill_callbacks
 from .transcript_renderer import TranscriptRenderer
@@ -83,10 +83,16 @@ class GuiApplication:
     @staticmethod
     def run() -> None:
         """
-        Serve the standalone GUI with Gunicorn and explicit HTTP or HTTPS settings.
+        Serve the standalone GUI with the platform's WSGI server.
         """
         configuration = GuiConfiguration()
-        GuiServer(
-            GuiApplication.create_application(configuration).server,
-            configuration,
-        ).run()
+        application = GuiApplication.create_application(configuration).server
+        if platform == 'win32':
+            from waitress import serve
+
+            serve(application, host=configuration.host, port=configuration.port, threads=4)
+            return
+
+        from .gui_server import GuiServer
+
+        GuiServer(application, configuration).run()

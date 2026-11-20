@@ -5,9 +5,9 @@ It uses Dash and Dash Bootstrap Components. It does not import the orchestrator,
 read its databases, proxy authentication, or call ADA directly. Browser requests
 go to the public MOSAIC backend using the backend's HttpOnly cookie.
 
-## Local installation (Python 3.12–3.14, macOS or Linux)
+## Local installation (Python 3.12–3.14)
 
-From this folder:
+On macOS or Linux, run from this folder:
 
 ```sh
 python3 -m venv .venv
@@ -15,6 +15,15 @@ source .venv/bin/activate
 python -m pip install -r requirements.lock
 python -m pip install --no-deps --no-build-isolation .
 mosaic-gui
+```
+
+On Windows, run from this folder in PowerShell:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation .
+.\.venv\Scripts\mosaic-gui.exe
 ```
 
 Open http://127.0.0.1:8050. Use the same host spelling as the backend; do not mix
@@ -39,7 +48,7 @@ JavaScript tests, not installation or running the app.
 MOSAIC_GUI_BACKEND_URL                 Public API origin; default http://127.0.0.1:8000
 MOSAIC_GUI_HOST                        GUI bind address; default 127.0.0.1
 MOSAIC_GUI_PORT                        GUI bind port; default 8050
-MOSAIC_GUI_SCHEME                      http (default) or https; no automatic fallback
+MOSAIC_GUI_SCHEME                      http (default) or https (macOS/Linux)
 MOSAIC_GUI_TLS_CERT_FILE               PEM server certificate followed by intermediates
 MOSAIC_GUI_TLS_KEY_FILE                Matching unencrypted PEM private key
 MOSAIC_GUI_ORGANISATION_LOGO_PATH       Optional private PNG path
@@ -49,10 +58,15 @@ MOSAIC_GUI_ORGANISATION_LOGO_HEIGHT     Maximum PNG height; default 40 pixels
 
 ## HTTPS listener
 
-The GUI uses Gunicorn with one supervised threaded worker and four request
-threads. It runs on macOS and Linux; native Windows execution is not supported.
+On macOS and Linux, the GUI uses Gunicorn with one supervised worker and four
+request threads. On Windows, it uses Waitress with four request threads for
+local HTTP. A Windows GUI configured for HTTPS stops with a configuration
+error.
+
 HTTP remains the default for local development and deployments with upstream
-TLS termination. To enable HTTPS directly on the GUI listener:
+TLS termination. Gunicorn can also serve HTTPS directly, including when a
+deployment forwards TLS through to the GUI. To enable that listener on macOS
+or Linux:
 
 ```sh
 export MOSAIC_GUI_SCHEME=https
@@ -254,7 +268,7 @@ Sign-out clears the cookie through the backend and clears GUI user data. A
 different token loads a different workspace. Stale responses from an earlier
 sign-in cannot repopulate the UI. No token is placed in URLs, browser storage,
 Dash stores or server callbacks; token entry uses a transient native input.
-The GUI uses Gunicorn without debug/reloading. In local testing, browser cookies
+The GUI runs without debug mode or automatic reloading. In local testing, browser cookies
 share a host across ports; in deployment the backend cookie remains host-only
 on its separate HTTPS hostname. Never log or commit cookie values.
 
