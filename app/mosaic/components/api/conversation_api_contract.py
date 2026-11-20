@@ -69,7 +69,8 @@ class ConversationApiContract:
             '/api/v1/conversations/{conversation_id}': {
                 'get': self._operation(
                     'getConversation',
-                    'Return complete public history. Unknown and foreign IDs both return 404.',
+                    'Return complete public history and the latest background job ID and status, if any. '
+                    'Unknown and foreign IDs both return 404.',
                     ConversationDetail,
                     owned_conversation=True,
                 ),

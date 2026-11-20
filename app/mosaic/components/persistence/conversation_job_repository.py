@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from ...models.api.conversation_job_summary import ConversationJobSummary
 from ...models.identity.trusted_request_context import TrustedRequestContext
 from .conversation_job_record import ConversationJobRecord
 from .conversation_metadata_record import ConversationMetadataRecord
@@ -67,6 +68,47 @@ class ConversationJobRepository:
                 ConversationMetadataRecord.user_id == context.user_id,
             )
         ).one_or_none()
+
+    def get_conversation_status(
+        self, context: TrustedRequestContext, conversation_id: UUID,
+    ) -> tuple[bool, bool, ConversationJobSummary | None] | None:
+        """
+        Read availability and latest job together for an owned conversation.
+
+        :param context: Trusted application and user identity.
+        :param conversation_id: Conversation identifier supplied by the client.
+
+        :return: Continuation flag, interruption flag and optional job summary,
+            or None for a missing or foreign conversation.
+        """
+        row = self._session.execute(
+            select(
+                ConversationMetadataRecord.invocation_in_progress,
+                ConversationMetadataRecord.is_interrupted,
+                ConversationJobRecord.job_id,
+                ConversationJobRecord.status,
+            )
+            .select_from(ConversationMetadataRecord)
+            .outerjoin(
+                ConversationJobRecord,
+                ConversationJobRecord.conversation_id == ConversationMetadataRecord.conversation_id,
+            )
+            .where(
+                ConversationMetadataRecord.conversation_id == str(conversation_id),
+                ConversationMetadataRecord.app_name == context.app_name,
+                ConversationMetadataRecord.user_id == context.user_id,
+            )
+            .order_by(ConversationJobRecord.created_at.desc(), ConversationJobRecord.job_id.desc())
+            .limit(1)
+        ).one_or_none()
+        if row is None:
+            return None
+        latest_job = None if row.job_id is None else ConversationJobSummary.model_validate(row)
+        return (
+            not row.invocation_in_progress and not row.is_interrupted,
+            row.is_interrupted,
+            latest_job,
+        )
 
     def claim(self, context: TrustedRequestContext, job_id: UUID) -> bool:
         """

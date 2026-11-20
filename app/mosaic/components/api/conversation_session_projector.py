@@ -100,7 +100,7 @@ class ConversationSessionProjector:
         """
         detail = self.detail(session, created_at=created_at)
         return ConversationSummary.model_validate(
-            detail.model_dump(exclude={'messages'})
+            detail.model_dump(include=set(ConversationSummary.model_fields))
         )
 
     def _message(self, event: dict[str, Any]) -> ConversationMessage | None:

@@ -186,11 +186,15 @@ class TestConversationApi(unittest.TestCase):
         job = self._wait_for_job(path, 'succeeded')
         self.assertEqual(job['result_text'], 'Hello')
         self.assertEqual(len(self.invocations), 1)
+        detail_path = f'/api/v1/conversations/{conversation_id}'
+        detail = self.client.get(detail_path, headers=self.headers).json()
+        self.assertEqual(detail['latest_job'], {'job_id': job['job_id'], 'status': 'succeeded'})
         replay = self.client.get(path + '/events', headers=self.headers, params={'after': 1})
         self.assertEqual(replay.status_code, 200)
         self.assertTrue(replay.text.startswith('id: 2\n'))
         self.assertNotIn('id: 1', replay.text)
         foreign = {'Authorization': 'Bearer synthetic-token-b'}
+        self.assertEqual(self.client.get(detail_path, headers=foreign).status_code, 404)
         self.assertEqual(self.client.get(path, headers=foreign).status_code, 404)
         self.assertEqual(self.client.get(path + '/events', headers=foreign).status_code, 404)
         self.assertEqual(self.client.post(path + '/stop', headers=foreign).status_code, 404)
@@ -251,6 +255,10 @@ class TestConversationApi(unittest.TestCase):
         asyncio.run(disconnect_from_replay())
         self.assertFalse(self.private_stream_closed)
         self.assertEqual(self.client.get(path, headers=self.headers).json()['status'], 'running')
+        detail_path = f'/api/v1/conversations/{conversation_id}'
+        detail = self.client.get(detail_path, headers=self.headers).json()
+        self.assertFalse(detail['can_continue'])
+        self.assertEqual(detail['latest_job'], {'job_id': created.json()['job_id'], 'status': 'running'})
         self.assertTrue(self.invocations)
         stopped = self.client.post(path + '/stop', headers=self.headers)
         self.assertEqual(stopped.status_code, 200)
@@ -269,6 +277,8 @@ class TestConversationApi(unittest.TestCase):
             self.assertEqual(follow_up.status_code, 202)
             second_job = self._wait_for_job(f'/api/v1/conversations/jobs/{follow_up.json()["job_id"]}', 'succeeded')
             self.assertEqual(second_job['result_text'], 'Hello')
+            detail = self.client.get(detail_path, headers=self.headers).json()
+            self.assertEqual(detail['latest_job'], {'job_id': second_job['job_id'], 'status': 'succeeded'})
             self.assertEqual(self.invocations[-1]['session_id'], conversation_id)
             self.assertEqual(len(patches), 1)
         else:
@@ -517,15 +527,16 @@ class TestConversationApi(unittest.TestCase):
         created = self._create()
         self.assertEqual(
             set(created),
-            {'conversation_id', 'title', 'created_at', 'last_activity_at', 'messages', 'can_continue', 'is_interrupted'},
+            {'conversation_id', 'title', 'created_at', 'last_activity_at', 'messages', 'can_continue', 'is_interrupted', 'latest_job'},
         )
         self.assertIsNone(created['title'])
+        self.assertIsNone(created['latest_job'])
         self.assertEqual(created['messages'], [])
         listed = self.client.get('/api/v1/conversations', headers=self.headers)
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(
             listed.json()['conversations'],
-            [{key: value for key, value in created.items() if key != 'messages'}],
+            [{key: value for key, value in created.items() if key not in ('messages', 'latest_job')}],
         )
         retrieved = self.client.get(
             f'/api/v1/conversations/{created["conversation_id"]}', headers=self.headers

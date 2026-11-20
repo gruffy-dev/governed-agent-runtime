@@ -3,18 +3,20 @@ from uuid import UUID
 
 from starlette.concurrency import run_in_threadpool
 
-from .conversation_not_found_error import ConversationNotFoundError
-from .conversation_session_projector import ConversationSessionProjector
-from .conversation_unavailable_error import ConversationUnavailableError
-from ..ada.ada_application_error import AdaApplicationError
-from ..ada.ada_session_api import AdaSessionApi
-from ..orchestration.orchestration_transition_controller import OrchestrationTransitionController
-from ..persistence.conversation_metadata_repository import ConversationMetadataRepository
-from ..persistence.mosaic_database import MosaicDatabase
 from ...models.api.conversation_detail import ConversationDetail
+from ...models.api.conversation_job_summary import ConversationJobSummary
 from ...models.api.conversation_list_response import ConversationListResponse
 from ...models.api.conversation_summary import ConversationSummary
 from ...models.identity.trusted_request_context import TrustedRequestContext
+from ..ada.ada_application_error import AdaApplicationError
+from ..ada.ada_session_api import AdaSessionApi
+from ..orchestration.orchestration_transition_controller import OrchestrationTransitionController
+from ..persistence.conversation_job_repository import ConversationJobRepository
+from ..persistence.conversation_metadata_repository import ConversationMetadataRepository
+from ..persistence.mosaic_database import MosaicDatabase
+from .conversation_not_found_error import ConversationNotFoundError
+from .conversation_session_projector import ConversationSessionProjector
+from .conversation_unavailable_error import ConversationUnavailableError
 
 
 class ConversationService:
@@ -88,11 +90,16 @@ class ConversationService:
                 raise ConversationNotFoundError() from None
             raise
         detail = self._projector.detail(complete, created_at=created_at)
-        flags = await run_in_threadpool(self._availability, context, conversation_id)
-        if flags is None:
+        status = await run_in_threadpool(self._conversation_status, context, conversation_id)
+        if status is None:
             raise ConversationNotFoundError()
+        can_continue, is_interrupted, latest_job = status
         return detail.model_copy(
-            update={'can_continue': flags[0], 'is_interrupted': flags[1]}
+            update={
+                'can_continue': can_continue,
+                'is_interrupted': is_interrupted,
+                'latest_job': latest_job,
+            }
         )
 
     async def begin_invocation(
@@ -170,7 +177,7 @@ class ConversationService:
                 continue
             summaries.append(
                 ConversationSummary.model_validate(
-                    detail.model_dump(exclude={'messages'})
+                    detail.model_dump(include=set(ConversationSummary.model_fields))
                 )
             )
         return ConversationListResponse(
@@ -203,19 +210,20 @@ class ConversationService:
                 context, conversation_id, created_at
             )
 
-    def _availability(
+    def _conversation_status(
         self, context: TrustedRequestContext, conversation_id: UUID
-    ) -> tuple[bool, bool] | None:
+    ) -> tuple[bool, bool, ConversationJobSummary | None] | None:
         """
-        Read owned availability without exposing reservation or SDK internals.
+        Read owned availability and the latest job in one database query.
 
         :param context: Trusted conversation owner.
         :param conversation_id: Validated routing reference.
 
-        :return: Continuation and interruption flags, or None for absent metadata.
+        :return: Continuation and interruption flags with the latest job summary,
+            or None for absent metadata.
         """
         with self._database.create_session() as session:
-            return ConversationMetadataRepository(session).get_availability(
+            return ConversationJobRepository(session).get_conversation_status(
                 context, conversation_id
             )
 
