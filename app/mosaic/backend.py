@@ -10,6 +10,7 @@ from .components.ada.ada_application_lifecycle import AdaApplicationLifecycle
 from .components.ada.ada_asgi_transport import AdaAsgiTransport
 from .components.api.conversation_job_service import ConversationJobService
 from .components.persistence.mosaic_database import MosaicDatabase
+from .components.persistence.mosaic_database_maintenance import MosaicDatabaseMaintenance
 from .components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from .models.backend_configuration import BackendConfiguration
 from .models.ada.ada_application_adapter_configuration import AdaApplicationAdapterConfiguration
@@ -124,13 +125,14 @@ class Backend:
                             lifespan_state=lifecycle.state,
                         )
                         await jobs.recover_abandoned(transport)
-                        public_application.state.conversation_jobs = jobs
-                        public_application.state.ada_transport = transport
-                        try:
-                            yield
-                        finally:
-                            await jobs.close()
-                            del public_application.state.ada_transport
+                        async with MosaicDatabaseMaintenance(runtime_database).running():
+                            public_application.state.conversation_jobs = jobs
+                            public_application.state.ada_transport = transport
+                            try:
+                                yield
+                            finally:
+                                await jobs.close()
+                                del public_application.state.ada_transport
             finally:
                 runtime_database.dispose()
 

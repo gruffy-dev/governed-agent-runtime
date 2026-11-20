@@ -3,6 +3,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing, suppress
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -21,9 +22,11 @@ from ..persistence.conversation_job_event_record import ConversationJobEventReco
 from ..persistence.conversation_job_repository import ConversationJobRepository
 from ..persistence.conversation_metadata_repository import ConversationMetadataRepository
 from ..persistence.mosaic_database import MosaicDatabase
+from ..persistence.mosaic_database_maintenance import MosaicDatabaseMaintenance
 from .ada_streaming_response import AdaStreamingResponse
 from .conversation_not_found_error import ConversationNotFoundError
 from .conversation_unavailable_error import ConversationUnavailableError
+from .job_replay_expired_error import JobReplayExpiredError
 from .job_submission_conflict_error import JobSubmissionConflictError
 
 
@@ -107,16 +110,19 @@ class ConversationJobService:
         with self._database.create_session() as session, session.begin():
             ConversationJobRepository(session).fail_abandoned(context, job_id, can_continue=can_continue)
 
-    async def get(self, context: TrustedRequestContext, job_id: UUID) -> ConversationJobDetail:
+    async def get(
+        self, context: TrustedRequestContext, job_id: UUID, *, for_replay: bool = False,
+    ) -> ConversationJobDetail:
         """
         Read an owned job and its saved outcome.
 
         :param context: Authenticated job owner.
         :param job_id: Job identifier.
+        :param for_replay: Require the replay window to be open.
 
         :return: Current job status and result.
         """
-        return await run_in_threadpool(self._get, context, job_id, False)
+        return await run_in_threadpool(self._get, context, job_id, False, for_replay=for_replay)
 
     async def stop(self, context: TrustedRequestContext, job_id: UUID) -> ConversationJobDetail:
         """
@@ -146,7 +152,7 @@ class ConversationJobService:
                 after = sequence
             if len(events) == 64:
                 continue
-            if job.status not in ('queued', 'running', 'stopping'):
+            if job.status not in ConversationJobRepository.active_statuses:
                 return
             await asyncio.sleep(0.25)
 
@@ -210,7 +216,9 @@ class ConversationJobService:
             raise JobSubmissionConflictError()
         return ConversationJobDetail.model_validate(existing)
 
-    def _get(self, context: TrustedRequestContext, job_id: UUID, stop: bool) -> ConversationJobDetail:
+    def _get(
+        self, context: TrustedRequestContext, job_id: UUID, stop: bool, *, for_replay: bool = False,
+    ) -> ConversationJobDetail:
         """
         Optionally request cancellation and return the committed status.
         """
@@ -221,6 +229,8 @@ class ConversationJobService:
             job = repository.get(context, job_id)
             if job is None:
                 raise ConversationNotFoundError()
+            if for_replay and MosaicDatabaseMaintenance.replay_has_expired(job, datetime.now(UTC)):
+                raise JobReplayExpiredError()
             return ConversationJobDetail.model_validate(job)
 
     def _read_events(self, context: TrustedRequestContext, job_id: UUID, after: int) -> tuple[ConversationJobDetail, list[tuple[int, bytes]]]:

@@ -347,6 +347,8 @@ class TestBackend(unittest.TestCase):
         migrator_type: Mock,
     ) -> None:
         events: list[str] = []
+        session_context = database_type.return_value.create_session.return_value
+        session_context.__enter__.return_value.execute.return_value.rowcount = 0
 
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> AsyncIterator[None]:

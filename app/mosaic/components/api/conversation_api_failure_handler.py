@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .conversation_not_found_error import ConversationNotFoundError
 from .conversation_unavailable_error import ConversationUnavailableError
 from .job_submission_conflict_error import JobSubmissionConflictError
+from .job_replay_expired_error import JobReplayExpiredError
 from ..ada.ada_application_error import AdaApplicationError
 from ...models.api.api_error_response import ApiErrorResponse
 
@@ -32,6 +33,7 @@ class ConversationApiFailureHandler:
             ConversationNotFoundError,
             ConversationUnavailableError,
             JobSubmissionConflictError,
+            JobReplayExpiredError,
             AdaApplicationError,
             SQLAlchemyError,
             Exception,
@@ -48,12 +50,14 @@ class ConversationApiFailureHandler:
         :param request: Request excluded from logging.
         :param error: Typed failure used only to choose missing or internal status.
 
-        :return: Correlated no-store 404, 409 or 500 response.
+        :return: Correlated no-store error response.
         """
         if isinstance(error, ConversationUnavailableError):
             return self._response(409, is_interrupted=error.is_interrupted)
         if isinstance(error, JobSubmissionConflictError):
             return self._response(409, submission_conflict=True)
+        if isinstance(error, JobReplayExpiredError):
+            return self._response(410)
         return self._response(
             404 if isinstance(error, ConversationNotFoundError) else 500
         )
@@ -110,6 +114,11 @@ class ConversationApiFailureHandler:
                 'conversation_interrupted' if is_interrupted else 'conversation_busy',
                 'Start a new conversation. Saved history remains readable.' if is_interrupted
                 else 'A previous response has not been finalised. Wait or start a new conversation.',
+            ),
+            410: (
+                'Job replay has expired',
+                'job_replay_expired',
+                'Load saved conversation history or check the job result.',
             ),
         }[status_code]
         if submission_conflict:

@@ -99,7 +99,8 @@ class ConversationApiContract:
         submission = paths['/api/v1/conversations/{conversation_id}/jobs']['post']
         submission['parameters'].append({
             'name': 'Idempotency-Key', 'in': 'header', 'required': False,
-            'description': 'UUID scoped to this conversation. Reuse it only when retrying the same submission.',
+            'description': 'UUID scoped to this conversation. Reuse it only for the same submission. '
+            'Finished jobs and their keys are eligible for removal after seven days.',
             'schema': {'type': 'string', 'format': 'uuid'},
         })
         submission['responses']['409'] = self._response(
@@ -123,10 +124,13 @@ class ConversationApiContract:
                     'schema': {'type': 'integer', 'minimum': 0, 'default': 0},
                 })
                 operation['responses'].pop('409')
+                operation['responses']['410'] = self._response(
+                    ApiErrorResponse, 'Replay expires one hour after the job leaves active execution.',
+                )
                 operation['x-mosaic-sse'].update({
                     'framing': 'id: <sequence>\ndata: <ADK JSON record>\n\n',
                     'disconnect': 'Detach the subscriber; the job keeps running.',
-                    'reconnection': 'Poll status or reconnect with the last received sequence.',
+                    'reconnection': 'Reconnect with the last received sequence. If replay has expired, load saved history or the job result.',
                     'errors': 'Check the job status for the completed outcome.',
                     'availability': 'Check the job status and conversation availability.',
                     'concurrency': 'Subscribers follow the same persisted job.',

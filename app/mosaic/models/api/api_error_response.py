@@ -14,6 +14,7 @@ class ApiErrorResponse(BaseModel):
         'conversation_busy',
         'conversation_interrupted',
         'idempotency_conflict',
+        'job_replay_expired',
         'internal_error',
         'invocation_failed',
     ] = Field(

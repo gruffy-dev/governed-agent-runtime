@@ -200,7 +200,7 @@ class ConversationApi:
             Replay and stream public events by sequence number.
             """
             jobs = request.app.state.conversation_jobs
-            await jobs.get(context, job_id)
+            await jobs.get(context, job_id, for_replay=True)
             return StreamingResponse(
                 jobs.events(context, job_id, after), media_type='text/event-stream',
                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'},

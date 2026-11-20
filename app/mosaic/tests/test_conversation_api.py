@@ -4,7 +4,7 @@ import time
 import unittest
 from collections.abc import AsyncIterator
 from contextlib import ExitStack
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from starlette.responses import StreamingResponse
 from starlette.types import Message
 
@@ -22,6 +23,9 @@ from mosaic.components.persistence.mosaic_database import MosaicDatabase
 from mosaic.components.persistence.mosaic_database_migrator import MosaicDatabaseMigrator
 from mosaic.components.persistence.conversation_metadata_repository import ConversationMetadataRepository
 from mosaic.components.persistence.conversation_job_repository import ConversationJobRepository
+from mosaic.components.persistence.conversation_job_event_record import ConversationJobEventRecord
+from mosaic.components.persistence.conversation_job_record import ConversationJobRecord
+from mosaic.components.persistence.mosaic_database_maintenance import MosaicDatabaseMaintenance
 from mosaic.components.persistence.user_access_repository import UserAccessRepository
 from mosaic.models.identity.pilot_administration_configuration import PilotAdministrationConfiguration
 from mosaic.models.identity.pilot_authentication_configuration import PilotAuthenticationConfiguration
@@ -200,6 +204,74 @@ class TestConversationApi(unittest.TestCase):
         self.assertEqual(self.client.get(path, headers=foreign).status_code, 404)
         self.assertEqual(self.client.get(path + '/events', headers=foreign).status_code, 404)
         self.assertEqual(self.client.post(path + '/stop', headers=foreign).status_code, 404)
+
+    def test_job_retention_expires_replay_and_jobs_without_deleting_saved_history(self) -> None:
+        self._install_stream()
+        keys = {'keep': uuid4(), 'expire': uuid4()}
+        locations = {}
+        for label in keys:
+            conversation_id = self._create()['conversation_id']
+            path = f'/api/v1/conversations/{conversation_id}'
+            submitted = self.client.post(
+                path + '/jobs', headers={**self.headers, 'Idempotency-Key': str(keys[label])},
+                json={'text': 'Read synthetic status'},
+            )
+            job_id = submitted.json()['job_id']
+            job_path = f'/api/v1/conversations/jobs/{job_id}'
+            self._wait_for_job(job_path, 'succeeded')
+            locations[label] = (conversation_id, job_id, path, job_path)
+
+        history = self.records[('synthetic-app', 'synthetic-user-a', locations['expire'][0])]['events']
+        history.append({
+            'id': 'synthetic-saved-reply', 'author': 'mosaic', 'timestamp': time.time(),
+            'content': {'role': 'model', 'parts': [{'text': 'Saved history.'}]},
+        })
+        with self.database.create_session() as session, session.begin():
+            session.get(ConversationJobRecord, locations['keep'][1]).updated_at = datetime.now(UTC) - timedelta(hours=2)
+            session.get(ConversationJobRecord, locations['expire'][1]).updated_at = datetime.now(UTC) - timedelta(days=8)
+
+        replay = self.client.get(locations['keep'][3] + '/events', headers=self.headers)
+        self.assertEqual(replay.status_code, 410)
+        self.assertEqual(replay.json()['error_code'], 'job_replay_expired')
+        foreign = self.client.get(
+            locations['keep'][3] + '/events', headers={'Authorization': 'Bearer synthetic-token-b'},
+        )
+        self.assertEqual(foreign.status_code, 404)
+
+        self.client_stack.close()
+        with patch.object(MosaicDatabaseMaintenance, 'batch_size', 1), TestClient(self._backend()) as restarted:
+            self.assertEqual(restarted.get('/ready').status_code, 200)
+            self.assertEqual(restarted.get(locations['expire'][3], headers=self.headers).status_code, 404)
+            detail = restarted.get(locations['expire'][2], headers=self.headers).json()
+            self.assertIsNone(detail['latest_job'])
+            self.assertEqual(detail['messages'][0]['text'], 'Saved history.')
+            retry = restarted.post(
+                locations['keep'][2] + '/jobs', headers={**self.headers, 'Idempotency-Key': str(keys['keep'])},
+                json={'text': 'Read synthetic status'},
+            )
+            self.assertEqual(retry.json()['job_id'], locations['keep'][1])
+            self.assertEqual(retry.json()['result_text'], 'Hello')
+            with self.database.create_session() as session:
+                self.assertEqual(session.scalars(select(ConversationJobEventRecord)).all(), [])
+
+    def test_database_maintenance_keeps_active_jobs_and_their_replay(self) -> None:
+        conversation_id = UUID(self._create()['conversation_id'])
+        owner = TrustedRequestContext(app_name='synthetic-app', user_id='synthetic-user-a')
+        with self.database.create_session() as session, session.begin():
+            job_id = ConversationJobRepository(session).reserve(owner, conversation_id, 'Read synthetic status')
+        with self.database.create_session() as session, session.begin():
+            self.assertTrue(ConversationJobRepository(session).claim(owner, job_id))
+            session.get(ConversationJobRecord, str(job_id)).updated_at = datetime.now(UTC) - timedelta(days=8)
+            session.add(ConversationJobEventRecord(job_id=str(job_id), sequence=1, frame=b'data: {}\n\n'))
+
+        async def maintain() -> None:
+            async with MosaicDatabaseMaintenance(self.database).running():
+                pass
+
+        asyncio.run(maintain())
+        with self.database.create_session() as session:
+            self.assertEqual(ConversationJobRepository(session).get(owner, job_id).status, 'running')
+            self.assertIsNotNone(session.get(ConversationJobEventRecord, (str(job_id), 1)))
 
     def test_job_submission_retry_returns_original_job_after_completion(self) -> None:
         self._install_stream()

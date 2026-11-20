@@ -13,6 +13,8 @@ from .conversation_metadata_repository import ConversationMetadataRepository
 
 
 class ConversationJobRepository:
+    active_statuses = ('queued', 'running', 'stopping')
+
     def __init__(self, session: Session) -> None:
         """
         Bind job storage to a caller-owned database transaction.
@@ -114,7 +116,7 @@ class ConversationJobRepository:
                 ConversationJobRecord.job_id, ConversationJobRecord.conversation_id, ConversationJobRecord.status,
             )
             .join(ConversationMetadataRecord, ConversationJobRecord.conversation_id == ConversationMetadataRecord.conversation_id)
-            .where(ConversationJobRecord.status.in_(('queued', 'running', 'stopping')))
+            .where(ConversationJobRecord.status.in_(self.active_statuses))
         )
         return [
             (TrustedRequestContext(app_name=row.app_name, user_id=row.user_id), UUID(row.job_id), UUID(row.conversation_id), row.status)
